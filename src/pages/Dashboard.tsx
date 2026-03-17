@@ -150,7 +150,7 @@ export function Dashboard() {
                   boxShadow: '0 4px 20px rgba(0,0,0,0.5)'
                 }}
                 itemStyle={{ color: 'var(--color-text-primary)' }}
-                formatter={(value: number) => [`₱${value.toLocaleString()}`, 'Net Worth']}
+                formatter={(value: any) => [`₱${value.toLocaleString()}`, 'Net Worth']}
               />
               <Area 
                 type="monotone" 

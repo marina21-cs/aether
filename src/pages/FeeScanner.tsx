@@ -1,248 +1,277 @@
-import { ArrowUpRight, ArrowDownRight, AlertTriangle, TrendingDown, DollarSign, Info, ShieldAlert, CheckCircle2 } from 'lucide-react';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend } from 'recharts';
+import { useEffect, useMemo, useState } from "react";
+import { useUser } from "@clerk/react";
+import {
+  AlertTriangle,
+  BadgeAlert,
+  Download,
+  TrendingDown,
+} from "lucide-react";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Legend,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import {
+  getFeeScan,
+  getRealReturn,
+  type FeeScanResponse,
+  type RealReturnResponse,
+} from "@/src/lib/api/phase3";
+import { formatCurrency } from "@/src/lib/utils";
 
-const projectionData = [
-  { year: 'Year 1', withFees: 1050000, withoutFees: 1060000, inflation: 1020000 },
-  { year: 'Year 5', withFees: 1280000, withoutFees: 1350000, inflation: 1100000 },
-  { year: 'Year 10', withFees: 1650000, withoutFees: 1820000, inflation: 1210000 },
-  { year: 'Year 15', withFees: 2120000, withoutFees: 2450000, inflation: 1340000 },
-  { year: 'Year 20', withFees: 2750000, withoutFees: 3300000, inflation: 1480000 },
-];
+const SEVERITY_COLOR: Record<"critical" | "warning" | "info", string> = {
+  critical: "#F87171",
+  warning: "#FBB040",
+  info: "#60A5FA",
+};
 
-const feeBreakdownData = [
-  { name: 'Management Fee', value: 1.5 },
-  { name: 'Platform Fee', value: 0.25 },
-  { name: 'Fund Expense Ratio', value: 0.45 },
-  { name: 'Trading Commissions', value: 0.15 },
-];
+function percent(value: number): string {
+  return `${(value * 100).toFixed(2)}%`;
+}
 
 export function FeeScanner() {
+  const { user } = useUser();
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [feeData, setFeeData] = useState<FeeScanResponse | null>(null);
+  const [realReturnData, setRealReturnData] = useState<RealReturnResponse | null>(null);
+
+  useEffect(() => {
+    if (!user?.id) return;
+
+    let active = true;
+    setLoading(true);
+    setError(null);
+
+    Promise.all([getFeeScan(user.id), getRealReturn(user.id)])
+      .then(([fees, realReturns]) => {
+        if (!active) return;
+        setFeeData(fees);
+        setRealReturnData(realReturns);
+      })
+      .catch((err) => {
+        if (!active) return;
+        setError(err instanceof Error ? err.message : "Failed to load fee analytics.");
+      })
+      .finally(() => {
+        if (!active) return;
+        setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [user?.id]);
+
+  const weightedAnnualFeePct = useMemo(() => {
+    if (!feeData || feeData.results.length === 0) return 0;
+    const totalValue = feeData.results.reduce((sum, row) => sum + row.currentValuePhp, 0);
+    if (totalValue <= 0) return 0;
+    const weighted = feeData.results.reduce(
+      (sum, row) => sum + row.annualFeePct * row.currentValuePhp,
+      0
+    );
+    return weighted / totalValue;
+  }, [feeData]);
+
+  const negativeRealCount = useMemo(() => {
+    if (!realReturnData) return 0;
+    return realReturnData.results.filter((row) => row.isNegativeReal).length;
+  }, [realReturnData]);
+
+  const topFeeRows = useMemo(() => {
+    if (!feeData) return [];
+    return feeData.results.slice(0, 6);
+  }, [feeData]);
+
+  const realReturnChartData = useMemo(() => {
+    if (!realReturnData) return [];
+    return realReturnData.results.slice(0, 8).map((row) => ({
+      asset: row.assetName,
+      nominal: Number((row.nominalReturn * 100).toFixed(2)),
+      real: Number((row.realReturn * 100).toFixed(2)),
+    }));
+  }, [realReturnData]);
+
   return (
-    <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500">
-      {/* Header Section */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+    <div className="mx-auto max-w-7xl space-y-6 animate-in fade-in duration-500">
+      <header className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
         <div>
-          <h1 className="font-display font-bold text-3xl text-white mb-2">Fee Analyzer & Real-Return</h1>
-          <p className="text-text-secondary">Uncover hidden costs and see the true impact of inflation on your wealth.</p>
+          <h1 className="font-display text-3xl font-bold text-white">Fee Analyzer & Real Return</h1>
+          <p className="text-sm text-text-secondary">
+            Quantify fee drag and inflation-adjusted performance with transparent assumptions.
+          </p>
         </div>
-        <div className="flex gap-3">
-          <button className="px-4 py-2 rounded-lg bg-glass-bg border border-glass-border text-sm font-medium hover:bg-white/5 transition-colors">
-            Download Report
-          </button>
-          <button className="px-4 py-2 rounded-lg bg-accent-warning text-bg-dark text-sm font-bold hover:bg-accent-warning/90 transition-colors shadow-[0_0_15px_rgba(245,158,11,0.3)]">
-            Optimize Fees
-          </button>
-        </div>
-      </div>
+        <button
+          type="button"
+          className="inline-flex items-center gap-2 rounded-lg border border-glass-border bg-glass-bg px-4 py-2 text-sm text-text-primary hover:bg-white/5"
+          onClick={() => window.print()}
+        >
+          <Download className="h-4 w-4" /> Export Snapshot (Print)
+        </button>
+      </header>
 
-      {/* Top Metrics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Total Annual Fees */}
-        <div className="glass-panel p-6 rounded-2xl relative overflow-hidden group border-accent-danger/30">
-          <div className="absolute -right-10 -top-10 w-32 h-32 bg-accent-danger/10 rounded-full blur-2xl group-hover:bg-accent-danger/20 transition-colors"></div>
-          <div className="flex justify-between items-start mb-4 relative z-10">
-            <div>
-              <div className="text-xs font-mono text-text-muted uppercase tracking-wider mb-1">Total Annual Fees</div>
-              <div className="font-display font-bold text-3xl text-white">2.35%</div>
-            </div>
-            <div className="w-10 h-10 rounded-full bg-accent-danger/10 flex items-center justify-center border border-accent-danger/20">
-              <AlertTriangle className="w-5 h-5 text-accent-danger" />
-            </div>
+      {error && (
+        <div className="rounded-xl border border-accent-danger/40 bg-accent-danger/10 px-4 py-3 text-sm text-accent-danger">
+          {error}
+        </div>
+      )}
+
+      <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <article className="glass-panel rounded-2xl border border-glass-border p-5">
+          <p className="text-xs uppercase tracking-[0.08em] text-text-muted">10-Year Fee Cost</p>
+          <p className="mt-2 text-2xl font-bold text-text-primary tabular-nums" style={{ fontFamily: "JetBrains Mono, monospace" }}>
+            {loading || !feeData ? "..." : formatCurrency(feeData.totalTenYearCost)}
+          </p>
+          <p className="mt-1 text-[11px] text-text-muted">P × ((1+r)^n − (1+r−f)^n)</p>
+        </article>
+
+        <article className="glass-panel rounded-2xl border border-glass-border p-5">
+          <p className="text-xs uppercase tracking-[0.08em] text-text-muted">Weighted Annual Fee</p>
+          <p className="mt-2 text-2xl font-bold text-accent-warning tabular-nums" style={{ fontFamily: "JetBrains Mono, monospace" }}>
+            {loading ? "..." : `${weightedAnnualFeePct.toFixed(2)}%`}
+          </p>
+          <p className="mt-1 text-[11px] text-text-muted">By current asset value</p>
+        </article>
+
+        <article className="glass-panel rounded-2xl border border-glass-border p-5">
+          <p className="text-xs uppercase tracking-[0.08em] text-text-muted">Negative Real Return Holdings</p>
+          <p className="mt-2 text-2xl font-bold text-accent-danger tabular-nums" style={{ fontFamily: "JetBrains Mono, monospace" }}>
+            {loading ? "..." : negativeRealCount}
+          </p>
+          <p className="mt-1 text-[11px] text-text-muted">Nominal return below inflation impact</p>
+        </article>
+      </section>
+
+      <section className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <article className="glass-panel rounded-2xl border border-glass-border p-6 lg:col-span-2">
+          <h2 className="mb-4 font-display text-lg font-bold text-text-primary">Top Fee Drag Contributors</h2>
+
+          <div className="h-[300px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={topFeeRows} margin={{ top: 8, right: 12, left: 0, bottom: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--color-glass-border)" vertical={false} />
+                <XAxis dataKey="assetName" stroke="var(--color-text-muted)" fontSize={11} tickLine={false} axisLine={false} interval={0} angle={-16} textAnchor="end" height={72} />
+                <YAxis stroke="var(--color-text-muted)" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `₱${(Number(value) / 1000).toFixed(0)}k`} />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "var(--color-bg-card)",
+                    borderColor: "var(--color-glass-border)",
+                    borderRadius: "8px",
+                  }}
+                  formatter={(value: unknown) => {
+                    const numeric = typeof value === "number" ? value : Number(value);
+                    return [formatCurrency(Number.isFinite(numeric) ? numeric : 0), "10Y fee cost"];
+                  }}
+                />
+                <Bar dataKey="tenYearCost" radius={[6, 6, 0, 0]}>
+                  {topFeeRows.map((row) => (
+                    <Cell key={row.assetId} fill={SEVERITY_COLOR[row.severity]} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
           </div>
-          <div className="flex items-center text-sm relative z-10">
-            <span className="text-accent-danger font-medium mr-2">₱ 292,575</span>
-            <span className="text-text-muted text-xs">estimated cost this year</span>
+        </article>
+
+        <article className="glass-panel rounded-2xl border border-glass-border p-6">
+          <h2 className="mb-4 font-display text-lg font-bold text-text-primary">Fee Alerts</h2>
+
+          <div className="space-y-3">
+            {(feeData?.results || []).slice(0, 6).map((row) => (
+              <div key={row.assetId} className="rounded-lg border border-glass-border bg-bg-surface p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-sm font-medium text-text-primary">{row.assetName}</p>
+                  <span
+                    className="rounded-full px-2 py-0.5 text-[10px] uppercase tracking-[0.08em]"
+                    style={{
+                      color: SEVERITY_COLOR[row.severity],
+                      backgroundColor: `${SEVERITY_COLOR[row.severity]}1a`,
+                    }}
+                  >
+                    {row.severity}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-text-muted">
+                  {row.annualFeePct.toFixed(2)}% annual fee • {formatCurrency(row.tenYearCost)} projected drag
+                </p>
+                {row.suggestion && (
+                  <p className="mt-1 text-[11px] text-text-secondary">{row.suggestion}</p>
+                )}
+              </div>
+            ))}
+
+            {!loading && (feeData?.results.length || 0) === 0 && (
+              <div className="rounded-lg border border-accent-success/40 bg-accent-success/10 px-3 py-2 text-sm text-text-secondary">
+                No fee-bearing holdings detected in the current dataset.
+              </div>
+            )}
           </div>
+        </article>
+      </section>
+
+      <section className="glass-panel rounded-2xl border border-glass-border p-6">
+        <h2 className="mb-4 font-display text-lg font-bold text-text-primary">Nominal vs Real Return</h2>
+
+        <div className="h-[300px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={realReturnChartData} margin={{ top: 8, right: 12, left: 0, bottom: 8 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--color-glass-border)" vertical={false} />
+              <XAxis dataKey="asset" stroke="var(--color-text-muted)" fontSize={11} tickLine={false} axisLine={false} interval={0} angle={-16} textAnchor="end" height={72} />
+              <YAxis stroke="var(--color-text-muted)" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `${Number(value).toFixed(0)}%`} />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: "var(--color-bg-card)",
+                  borderColor: "var(--color-glass-border)",
+                  borderRadius: "8px",
+                }}
+                formatter={(value: unknown, name: unknown) => {
+                  const numeric = typeof value === "number" ? value : Number(value);
+                  const safe = Number.isFinite(numeric) ? numeric : 0;
+                  return [`${safe.toFixed(2)}%`, String(name || "Value")];
+                }}
+              />
+              <Legend />
+              <Bar dataKey="nominal" fill="var(--color-accent-secondary)" radius={[5, 5, 0, 0]} name="Nominal" />
+              <Bar dataKey="real" fill="var(--color-accent-primary)" radius={[5, 5, 0, 0]} name="Real (Inflation-adjusted)" />
+            </BarChart>
+          </ResponsiveContainer>
         </div>
 
-        {/* Real Return (Post-Inflation) */}
-        <div className="glass-panel p-6 rounded-2xl relative overflow-hidden group border-accent-warning/30">
-          <div className="absolute -right-10 -top-10 w-32 h-32 bg-accent-warning/10 rounded-full blur-2xl group-hover:bg-accent-warning/20 transition-colors"></div>
-          <div className="flex justify-between items-start mb-4 relative z-10">
-            <div>
-              <div className="text-xs font-mono text-text-muted uppercase tracking-wider mb-1">Real Return (YTD)</div>
-              <div className="font-display font-bold text-3xl text-white">4.2%</div>
-            </div>
-            <div className="w-10 h-10 rounded-full bg-accent-warning/10 flex items-center justify-center border border-accent-warning/20">
-              <TrendingDown className="w-5 h-5 text-accent-warning" />
-            </div>
-          </div>
-          <div className="flex items-center text-sm relative z-10">
-            <span className="text-text-muted text-xs">Nominal Return: </span>
-            <span className="text-white font-medium ml-1"> 8.4%</span>
-            <span className="mx-2 text-glass-border">|</span>
-            <span className="text-text-muted text-xs">Inflation: </span>
-            <span className="text-accent-danger font-medium ml-1"> 4.2%</span>
-          </div>
-        </div>
-
-        {/* Potential Savings */}
-        <div className="glass-panel p-6 rounded-2xl relative overflow-hidden group border-accent-success/30">
-          <div className="absolute -right-10 -top-10 w-32 h-32 bg-accent-success/10 rounded-full blur-2xl group-hover:bg-accent-success/20 transition-colors"></div>
-          <div className="flex justify-between items-start mb-4 relative z-10">
-            <div>
-              <div className="text-xs font-mono text-text-muted uppercase tracking-wider mb-1">Potential 20-Yr Savings</div>
-              <div className="font-display font-bold text-3xl text-white">₱ 5.5M</div>
-            </div>
-            <div className="w-10 h-10 rounded-full bg-accent-success/10 flex items-center justify-center border border-accent-success/20">
-              <DollarSign className="w-5 h-5 text-accent-success" />
-            </div>
-          </div>
-          <div className="flex items-center text-sm relative z-10">
-            <span className="flex items-center text-accent-success bg-accent-success/10 px-2 py-0.5 rounded text-xs font-medium mr-2 border border-accent-success/20">
-              <CheckCircle2 className="w-3 h-3 mr-1" />
-              Actionable
-            </span>
-            <span className="text-text-muted text-xs">by optimizing to 0.8% fees</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* Left Column: Charts */}
-        <div className="lg:col-span-2 space-y-6">
-          
-          {/* The Compounding Cost of Fees */}
-          <div className="glass-panel p-6 rounded-2xl border border-glass-border">
-            <div className="flex justify-between items-center mb-6">
+        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+          {(realReturnData?.results || []).slice(0, 8).map((row) => (
+            <div key={row.assetId} className="flex items-start gap-2 rounded-lg border border-glass-border bg-bg-surface p-3">
+              {row.isNegativeReal ? (
+                <AlertTriangle className="mt-0.5 h-4 w-4 text-accent-danger" />
+              ) : (
+                <BadgeAlert className="mt-0.5 h-4 w-4 text-accent-success" />
+              )}
               <div>
-                <h2 className="font-display font-bold text-lg text-white">The Compounding Cost of Fees</h2>
-                <p className="text-xs text-text-muted mt-1">Projected wealth over 20 years (Assuming 8% gross return)</p>
+                <p className="text-sm font-medium text-text-primary">{row.assetName}</p>
+                <p className="text-xs text-text-muted">
+                  Nominal {percent(row.nominalReturn)} • Real {percent(row.realReturn)}
+                </p>
               </div>
             </div>
-            
-            <div className="h-[300px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={projectionData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="colorWithoutFees" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="var(--color-accent-success)" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="var(--color-accent-success)" stopOpacity={0}/>
-                    </linearGradient>
-                    <linearGradient id="colorWithFees" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="var(--color-accent-primary)" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="var(--color-accent-primary)" stopOpacity={0}/>
-                    </linearGradient>
-                    <linearGradient id="colorInflation" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="var(--color-accent-danger)" stopOpacity={0.1}/>
-                      <stop offset="95%" stopColor="var(--color-accent-danger)" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--color-glass-border)" vertical={false} />
-                  <XAxis dataKey="year" stroke="var(--color-text-muted)" fontSize={12} tickLine={false} axisLine={false} dy={10} />
-                  <YAxis stroke="var(--color-text-muted)" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `₱${(value / 1000000).toFixed(1)}M`} dx={-10} />
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: 'var(--color-bg-card)', borderColor: 'var(--color-glass-border)', borderRadius: '8px' }}
-                    itemStyle={{ color: 'var(--color-text-primary)' }}
-                    formatter={(value: number) => [`₱${value.toLocaleString()}`, '']}
-                  />
-                  <Legend verticalAlign="top" height={36} iconType="circle" />
-                  <Area type="monotone" dataKey="withoutFees" name="0% Fees (Theoretical)" stroke="var(--color-accent-success)" strokeWidth={2} fillOpacity={1} fill="url(#colorWithoutFees)" />
-                  <Area type="monotone" dataKey="withFees" name="Current Fees (2.35%)" stroke="var(--color-accent-primary)" strokeWidth={3} fillOpacity={1} fill="url(#colorWithFees)" />
-                  <Area type="monotone" dataKey="inflation" name="Purchasing Power (Inflation Adjusted)" stroke="var(--color-accent-danger)" strokeWidth={2} strokeDasharray="5 5" fillOpacity={1} fill="url(#colorInflation)" />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* Fee Breakdown */}
-          <div className="glass-panel p-6 rounded-2xl border border-glass-border">
-            <h2 className="font-display font-bold text-lg text-white mb-6">Current Fee Breakdown</h2>
-            <div className="h-[200px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={feeBreakdownData} layout="vertical" margin={{ top: 0, right: 30, left: 40, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--color-glass-border)" horizontal={true} vertical={false} />
-                  <XAxis type="number" stroke="var(--color-text-muted)" fontSize={12} tickFormatter={(val) => `${val}%`} />
-                  <YAxis dataKey="name" type="category" stroke="var(--color-text-primary)" fontSize={12} width={150} />
-                  <Tooltip 
-                    cursor={{fill: 'var(--color-glass-bg)'}}
-                    contentStyle={{ backgroundColor: 'var(--color-bg-card)', borderColor: 'var(--color-glass-border)', borderRadius: '8px' }}
-                    formatter={(value: number) => [`${value}%`, 'Fee']}
-                  />
-                  <Bar dataKey="value" fill="var(--color-accent-warning)" radius={[0, 4, 4, 0]} barSize={24} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
+          ))}
         </div>
+      </section>
 
-        {/* Right Column: Insights & Actions */}
-        <div className="space-y-6">
-          
-          {/* AI Fee Analysis */}
-          <div className="glass-panel p-6 rounded-2xl border border-accent-warning/30 relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-accent-warning/10 rounded-full blur-3xl pointer-events-none"></div>
-            
-            <div className="flex items-center mb-4 relative z-10">
-              <ShieldAlert className="w-5 h-5 text-accent-warning mr-2" />
-              <h3 className="font-display font-bold text-lg text-white">AETHER Analysis</h3>
-            </div>
-            
-            <div className="space-y-4 relative z-10">
-              <p className="text-sm text-text-secondary leading-relaxed">
-                Your current blended fee rate of <strong className="text-white">2.35%</strong> is <strong className="text-accent-danger">0.85% higher</strong> than the industry average for your asset class mix.
-              </p>
-              
-              <div className="p-3 rounded-lg bg-bg-dark/50 border border-glass-border">
-                <div className="text-xs font-mono text-text-muted mb-1">PRIMARY CULPRIT</div>
-                <div className="text-sm text-white font-medium">BPI Equity Value Fund</div>
-                <div className="flex justify-between items-center mt-1">
-                  <span className="text-xs text-text-muted">Management Fee</span>
-                  <span className="text-xs text-accent-danger font-bold">2.00%</span>
-                </div>
-              </div>
-
-              <div className="p-3 rounded-lg bg-bg-dark/50 border border-glass-border">
-                <div className="text-xs font-mono text-text-muted mb-1">RECOMMENDED ALTERNATIVE</div>
-                <div className="text-sm text-white font-medium">Vanguard Total World Stock (VT)</div>
-                <div className="flex justify-between items-center mt-1">
-                  <span className="text-xs text-text-muted">Expense Ratio</span>
-                  <span className="text-xs text-accent-success font-bold">0.07%</span>
-                </div>
-              </div>
-            </div>
-
-            <button className="w-full mt-6 py-3 rounded-xl bg-accent-warning text-bg-dark text-sm font-bold hover:bg-accent-warning/90 transition-colors shadow-[0_0_15px_rgba(245,158,11,0.2)]">
-              Apply Recommendations
-            </button>
-          </div>
-
-          {/* Inflation Impact */}
-          <div className="glass-panel p-6 rounded-2xl border border-glass-border">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-display font-bold text-lg text-white">PH Inflation Impact</h3>
-              <Info className="w-4 h-4 text-text-muted" />
-            </div>
-            
-            <div className="space-y-4">
-              <div className="flex justify-between items-end border-b border-glass-border pb-3">
-                <div>
-                  <div className="text-xs text-text-muted mb-1">Current PH Inflation Rate</div>
-                  <div className="text-xl font-bold text-white">4.2%</div>
-                </div>
-                <div className="text-right">
-                  <div className="text-xs text-text-muted mb-1">Your Portfolio Yield</div>
-                  <div className="text-xl font-bold text-accent-success">8.4%</div>
-                </div>
-              </div>
-              
-              <div>
-                <div className="text-sm text-text-secondary mb-2">Purchasing Power Loss (Cash)</div>
-                <div className="flex items-center">
-                  <div className="w-full h-2 bg-bg-dark rounded-full overflow-hidden mr-3">
-                    <div className="h-full bg-accent-danger rounded-full" style={{ width: '42%' }}></div>
-                  </div>
-                  <span className="text-xs font-mono text-accent-danger">-₱ 52,290</span>
-                </div>
-                <p className="text-[10px] text-text-muted mt-2">Your ₱1.24M in cash is losing value. Consider moving excess to high-yield digital banks or short-term bonds.</p>
-              </div>
-            </div>
-          </div>
-
-        </div>
-      </div>
+      <section className="rounded-xl border border-accent-warning/40 bg-accent-warning/10 px-4 py-3 text-xs text-text-secondary">
+        <p className="inline-flex items-center font-semibold text-accent-warning">
+          <TrendingDown className="mr-1 h-3.5 w-3.5" />
+          CPI Source
+        </p>
+        <p className="mt-1">
+          Real return values use Philippine CPI from PSA as configured in your Phase 3 environment variables.
+        </p>
+      </section>
     </div>
   );
 }

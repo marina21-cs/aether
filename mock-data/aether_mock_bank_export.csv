@@ -1,0 +1,15 @@
+Instrument Code,Description,Category,Units,Average Price,Market Price,Currency,Amount
+JFC,Jollibee Foods Corp,PH equity,240,245.50,256.00,PHP,61440
+FMETF,First Metro ETF,PH equity,180,107.20,112.30,PHP,20214
+ALI,Ayala Land Inc,PH equity,800,31.10,34.20,PHP,27360
+BDO,BDO Unibank,PH equity,500,128.50,138.60,PHP,69300
+AAPL,Apple Inc,US equity,12,176.00,189.30,USD,2271.60
+NVDA,NVIDIA Corp,US equity,4,462.00,875.00,USD,3500
+MSFT,Microsoft Corp,US equity,8,380.00,412.00,USD,3296
+AMZN,Amazon.com Inc,US equity,6,145.00,178.00,USD,1068
+BTC,Bitcoin,Crypto spot,0.075,42000,68100,USD,5107.5
+ETH,Ethereum,Crypto spot,1.100,2200,3640,USD,4004
+ADA,Cardano,Crypto spot,3000,0.42,0.72,USD,2160
+RTB2031,Philippine Retail Treasury Bond,Bond,1,150000,150000,PHP,150000
+USD-CASH,USD Savings Account,Cash,1,15000,15000,USD,15000
+SUV-2020,Toyota Fortuner,Tangible vehicle,1,1450000,1325000,PHP,1325000

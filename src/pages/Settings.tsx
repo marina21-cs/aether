@@ -1,140 +1,227 @@
-import { User, Shield, Bell, CreditCard, Lock, Smartphone, Mail, Globe, LogOut } from 'lucide-react';
+import { useEffect, useMemo, useState } from "react";
+import { useUser } from "@clerk/react";
+import { CheckCircle2, Shield, User, AlertTriangle } from "lucide-react";
+import {
+  getUserSettings,
+  updateUserSettings,
+  type UserSettingsResponse,
+} from "@/src/lib/api/phase3";
+
+type RiskTolerance = "conservative" | "moderate" | "aggressive";
+type BaseCurrency = "PHP" | "USD" | "SGD" | "HKD";
+
+const RISK_OPTIONS: Array<{ id: RiskTolerance; label: string; description: string }> = [
+  {
+    id: "conservative",
+    label: "Conservative",
+    description: "Capital preservation first, lower volatility preference.",
+  },
+  {
+    id: "moderate",
+    label: "Moderate",
+    description: "Balanced growth with controlled drawdown tolerance.",
+  },
+  {
+    id: "aggressive",
+    label: "Aggressive",
+    description: "Higher growth target with higher volatility tolerance.",
+  },
+];
+
+const CURRENCY_OPTIONS: BaseCurrency[] = ["PHP", "USD", "SGD", "HKD"];
 
 export function Settings() {
+  const { user } = useUser();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [profile, setProfile] = useState<UserSettingsResponse | null>(null);
+  const [riskTolerance, setRiskTolerance] = useState<RiskTolerance>("moderate");
+  const [baseCurrency, setBaseCurrency] = useState<BaseCurrency>("PHP");
+
+  useEffect(() => {
+    if (!user?.id) return;
+
+    let active = true;
+    setLoading(true);
+    setError(null);
+
+    getUserSettings(user.id)
+      .then((payload) => {
+        if (!active) return;
+        setProfile(payload);
+        setRiskTolerance(payload.risk_tolerance);
+        setBaseCurrency(payload.base_currency);
+      })
+      .catch((err) => {
+        if (!active) return;
+        setError(err instanceof Error ? err.message : "Failed to load user settings.");
+      })
+      .finally(() => {
+        if (!active) return;
+        setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [user?.id]);
+
+  const hasChanges = useMemo(() => {
+    if (!profile) return false;
+    return (
+      profile.risk_tolerance !== riskTolerance || profile.base_currency !== baseCurrency
+    );
+  }, [profile, riskTolerance, baseCurrency]);
+
+  const saveChanges = async () => {
+    if (!user?.id || !hasChanges) return;
+    setSaving(true);
+    setError(null);
+    setSaved(false);
+
+    try {
+      await updateUserSettings(user.id, {
+        risk_tolerance: riskTolerance,
+        base_currency: baseCurrency,
+      });
+
+      setProfile((prev) =>
+        prev
+          ? {
+              ...prev,
+              risk_tolerance: riskTolerance,
+              base_currency: baseCurrency,
+            }
+          : prev
+      );
+
+      setSaved(true);
+      window.setTimeout(() => setSaved(false), 2600);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save settings.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
-    <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in duration-500">
-      {/* Header Section */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-        <div>
-          <h1 className="font-display font-bold text-3xl text-white mb-2">Settings & Profile</h1>
-          <p className="text-text-secondary">Manage your account preferences, security, and subscription tier.</p>
+    <div className="mx-auto max-w-5xl space-y-6 animate-in fade-in duration-500">
+      <header>
+        <h1 className="font-display text-3xl font-bold text-white">Settings & Profile</h1>
+        <p className="mt-1 text-sm text-text-secondary">
+          Update risk profile and base currency used across dashboard analytics.
+        </p>
+      </header>
+
+      {error && (
+        <div className="rounded-xl border border-accent-danger/40 bg-accent-danger/10 px-4 py-3 text-sm text-accent-danger">
+          {error}
         </div>
-      </div>
+      )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Left Column: Navigation */}
-        <div className="lg:col-span-1 space-y-2">
-          <div className="glass-panel p-4 rounded-2xl border border-glass-border">
-            <nav className="space-y-1">
-              <button className="w-full flex items-center px-4 py-3 rounded-xl bg-accent-primary/10 text-accent-primary border border-accent-primary/20 transition-all font-medium text-sm">
-                <User className="w-4 h-4 mr-3" /> Profile
-              </button>
-              <button className="w-full flex items-center px-4 py-3 rounded-xl text-text-secondary hover:text-text-primary hover:bg-glass-bg transition-all font-medium text-sm">
-                <Shield className="w-4 h-4 mr-3" /> Security
-              </button>
-              <button className="w-full flex items-center px-4 py-3 rounded-xl text-text-secondary hover:text-text-primary hover:bg-glass-bg transition-all font-medium text-sm">
-                <Bell className="w-4 h-4 mr-3" /> Notifications
-              </button>
-              <button className="w-full flex items-center px-4 py-3 rounded-xl text-text-secondary hover:text-text-primary hover:bg-glass-bg transition-all font-medium text-sm">
-                <CreditCard className="w-4 h-4 mr-3" /> Billing & Tier
-              </button>
-              <button className="w-full flex items-center px-4 py-3 rounded-xl text-text-secondary hover:text-text-primary hover:bg-glass-bg transition-all font-medium text-sm">
-                <Globe className="w-4 h-4 mr-3" /> Preferences
-              </button>
-            </nav>
-            
-            <div className="mt-8 pt-4 border-t border-glass-border">
-              <button className="w-full flex items-center px-4 py-3 rounded-xl text-accent-danger hover:bg-accent-danger/10 transition-all font-medium text-sm">
-                <LogOut className="w-4 h-4 mr-3" /> Sign Out
-              </button>
-            </div>
-          </div>
-        </div>
+      <section className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <article className="glass-panel rounded-2xl border border-glass-border p-6">
+          <h2 className="mb-4 flex items-center font-display text-lg font-bold text-text-primary">
+            <User className="mr-2 h-5 w-5 text-accent-primary" />
+            Account
+          </h2>
 
-        {/* Right Column: Content */}
-        <div className="lg:col-span-3 space-y-6">
-          {/* Profile Section */}
-          <div className="glass-panel p-8 rounded-2xl border border-glass-border">
-            <h2 className="font-display font-bold text-xl text-white mb-6">Personal Information</h2>
-            
-            <div className="flex items-center gap-6 mb-8">
-              <div className="w-24 h-24 rounded-full bg-gradient-to-br from-accent-secondary to-accent-primary p-[3px]">
-                <div className="w-full h-full rounded-full bg-bg-card border-2 border-glass-border flex items-center justify-center overflow-hidden">
-                  <span className="font-display font-bold text-3xl text-white">GV</span>
-                </div>
-              </div>
-              <div>
-                <button className="px-4 py-2 rounded-lg bg-glass-bg border border-glass-border text-sm font-medium hover:bg-white/5 transition-colors mb-2">
-                  Change Avatar
-                </button>
-                <p className="text-xs text-text-muted">JPG, GIF or PNG. Max size of 800K</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-text-secondary">First Name</label>
-                <input 
-                  type="text" 
-                  defaultValue="Gabriel" 
-                  className="w-full bg-bg-dark border border-glass-border rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-accent-primary/50 transition-colors"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-text-secondary">Last Name</label>
-                <input 
-                  type="text" 
-                  defaultValue="Velasco" 
-                  className="w-full bg-bg-dark border border-glass-border rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-accent-primary/50 transition-colors"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-text-secondary">Email Address</label>
-                <div className="relative">
-                  <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
-                  <input 
-                    type="email" 
-                    defaultValue="gabriel.v@example.com" 
-                    className="w-full bg-bg-dark border border-glass-border rounded-xl pl-10 pr-4 py-3 text-sm text-white focus:outline-none focus:border-accent-primary/50 transition-colors"
-                  />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-text-secondary">Phone Number</label>
-                <div className="relative">
-                  <Smartphone className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
-                  <input 
-                    type="tel" 
-                    defaultValue="+63 917 123 4567" 
-                    className="w-full bg-bg-dark border border-glass-border rounded-xl pl-10 pr-4 py-3 text-sm text-white focus:outline-none focus:border-accent-primary/50 transition-colors"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-8 pt-6 border-t border-glass-border flex justify-end gap-3">
-              <button className="px-6 py-2 rounded-lg bg-glass-bg border border-glass-border text-sm font-medium hover:bg-white/5 transition-colors">
-                Cancel
-              </button>
-              <button className="px-6 py-2 rounded-lg bg-accent-primary text-white text-sm font-medium hover:bg-accent-primary/90 transition-colors shadow-[0_0_15px_rgba(124,58,237,0.3)]">
-                Save Changes
-              </button>
-            </div>
+          <div className="rounded-xl border border-glass-border bg-bg-surface p-4">
+            <p className="text-sm font-semibold text-text-primary">{user?.fullName || "AETHER User"}</p>
+            <p className="mt-1 text-xs text-text-muted">{user?.primaryEmailAddress?.emailAddress}</p>
           </div>
 
-          {/* Subscription Tier */}
-          <div className="glass-panel p-8 rounded-2xl border border-accent-primary/30 relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-64 h-64 bg-accent-primary/5 rounded-full blur-3xl pointer-events-none"></div>
-            
-            <h2 className="font-display font-bold text-xl text-white mb-6 relative z-10">Current Plan</h2>
-            
-            <div className="flex flex-col md:flex-row items-center justify-between p-6 rounded-xl bg-bg-dark/50 border border-glass-border relative z-10">
-              <div>
-                <div className="flex items-center gap-3 mb-2">
-                  <h3 className="text-2xl font-bold text-white">AETHER Premium</h3>
-                  <span className="text-[10px] font-mono bg-accent-primary/20 text-accent-primary px-2 py-0.5 rounded border border-accent-primary/30">ACTIVE</span>
-                </div>
-                <p className="text-sm text-text-secondary">Billed annually. Next charge: Nov 15, 2024</p>
-              </div>
-              
-              <div className="mt-4 md:mt-0 text-right">
-                <div className="text-2xl font-bold text-white">₱4,990<span className="text-sm text-text-muted font-normal">/yr</span></div>
-                <button className="mt-2 text-sm text-accent-secondary hover:text-white transition-colors">Manage Billing</button>
+          <div className="mt-4 space-y-2 text-xs text-text-muted">
+            <p>
+              Subscription tier: <span className="text-text-primary">{profile?.subscription_tier || "free"}</span>
+            </p>
+            <p>
+              Loading status: <span className="text-text-primary">{loading ? "syncing" : "ready"}</span>
+            </p>
+          </div>
+        </article>
+
+        <article className="glass-panel rounded-2xl border border-glass-border p-6 lg:col-span-2">
+          <h2 className="mb-4 flex items-center font-display text-lg font-bold text-text-primary">
+            <Shield className="mr-2 h-5 w-5 text-accent-secondary" />
+            Portfolio Preferences
+          </h2>
+
+          <div className="space-y-5">
+            <div>
+              <p className="mb-2 text-xs uppercase tracking-[0.08em] text-text-muted">Risk Tolerance</p>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                {RISK_OPTIONS.map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => setRiskTolerance(option.id)}
+                    className={`rounded-xl border p-3 text-left transition-colors ${
+                      riskTolerance === option.id
+                        ? "border-accent-primary/50 bg-accent-subtle"
+                        : "border-glass-border bg-bg-surface hover:border-border-accent"
+                    }`}
+                  >
+                    <p className="text-sm font-semibold text-text-primary">{option.label}</p>
+                    <p className="mt-1 text-xs text-text-muted">{option.description}</p>
+                  </button>
+                ))}
               </div>
             </div>
+
+            <div>
+              <p className="mb-2 text-xs uppercase tracking-[0.08em] text-text-muted">Base Currency</p>
+              <div className="flex flex-wrap gap-2">
+                {CURRENCY_OPTIONS.map((currency) => (
+                  <button
+                    key={currency}
+                    type="button"
+                    onClick={() => setBaseCurrency(currency)}
+                    className={`rounded-full border px-4 py-1.5 text-sm transition-colors ${
+                      baseCurrency === currency
+                        ? "border-accent-primary/50 bg-accent-subtle text-text-primary"
+                        : "border-glass-border bg-bg-surface text-text-secondary hover:text-text-primary"
+                    }`}
+                  >
+                    {currency}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={saveChanges}
+                disabled={!hasChanges || saving || loading}
+                className="rounded-lg bg-accent-primary px-5 py-2 text-sm font-semibold text-[#09090B] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {saving ? "Saving..." : "Save Changes"}
+              </button>
+
+              {saved && (
+                <span className="inline-flex items-center text-sm text-accent-success">
+                  <CheckCircle2 className="mr-1 h-4 w-4" />
+                  Settings updated
+                </span>
+              )}
+            </div>
           </div>
-        </div>
-      </div>
+        </article>
+      </section>
+
+      <section className="rounded-xl border border-accent-danger/40 bg-accent-danger/10 px-4 py-3 text-xs text-text-secondary">
+        <p className="inline-flex items-center font-semibold text-accent-danger">
+          <AlertTriangle className="mr-1 h-3.5 w-3.5" />
+          Analytics-Only Platform
+        </p>
+        <p className="mt-1">
+          AETHER does not execute trades or move funds. Settings only affect analytics, reporting, and advisor context.
+        </p>
+      </section>
     </div>
   );
 }

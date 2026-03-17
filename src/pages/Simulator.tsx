@@ -175,7 +175,7 @@ export function Simulator() {
                   <Tooltip 
                     contentStyle={{ backgroundColor: 'var(--color-bg-card)', borderColor: 'var(--color-glass-border)', borderRadius: '8px' }}
                     itemStyle={{ color: 'var(--color-text-primary)' }}
-                    formatter={(value: number, name: string) => [`₱${value.toLocaleString()}`, name === 'value' ? 'Simulated' : 'Target']}
+                    formatter={(value: any, name: any) => [`₱${value.toLocaleString()}`, name === 'value' ? 'Simulated' : 'Target']}
                   />
                   <Area type="monotone" dataKey="target" stroke="var(--color-text-muted)" strokeWidth={2} strokeDasharray="5 5" fill="none" />
                   <Area type="monotone" dataKey="value" stroke="var(--color-accent-secondary)" strokeWidth={3} fillOpacity={1} fill="url(#colorSim)" />

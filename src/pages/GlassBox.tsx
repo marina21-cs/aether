@@ -1,191 +1,478 @@
-import { Eye, Shield, Zap, Activity, ArrowRight, CheckCircle2, AlertTriangle, Info } from 'lucide-react';
+import { useEffect, useMemo, useState } from "react";
+import { useUser } from "@clerk/react";
+import { Eye, Sigma, Activity, TrendingUp, ShieldAlert, Play, RotateCcw, SlidersHorizontal, FileText } from "lucide-react";
+import {
+  CartesianGrid,
+  Legend,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import { getGlassBox, type GlassBoxQuery, type GlassBoxResponse } from "@/src/lib/api/phase3";
+import { formatCurrency } from "@/src/lib/utils";
+
+function formatPercent(value: number): string {
+  return `${(value * 100).toFixed(2)}%`;
+}
+
+function round(value: number, decimals = 2): number {
+  const factor = Math.pow(10, decimals);
+  return Math.round(value * factor) / factor;
+}
+
+const DEFAULT_CONTROLS: Required<GlassBoxQuery> = {
+  returnShiftPct: 0,
+  volatilityMultiplier: 1,
+  baseCorrelation: 0.15,
+  years: 10,
+  paths: 1000,
+  monthlyContributionPhp: 0,
+  marketShockPct: 0,
+  riskFreeRatePct: 6.25,
+};
 
 export function GlassBox() {
+  const { user } = useUser();
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [data, setData] = useState<GlassBoxResponse | null>(null);
+  const [controls, setControls] = useState<Required<GlassBoxQuery>>(DEFAULT_CONTROLS);
+  const [appliedControls, setAppliedControls] = useState<Required<GlassBoxQuery>>(DEFAULT_CONTROLS);
+
+  useEffect(() => {
+    if (!user?.id) return;
+
+    let active = true;
+    setLoading(true);
+    setError(null);
+
+    getGlassBox(user.id, appliedControls)
+      .then((payload) => {
+        if (!active) return;
+        setData(payload);
+      })
+      .catch((err) => {
+        if (!active) return;
+        setError(err instanceof Error ? err.message : "Failed to load Glass Box analytics.");
+      })
+      .finally(() => {
+        if (!active) return;
+        setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [user?.id, appliedControls]);
+
+  const chartData = useMemo(() => {
+    if (!data) return [];
+    const { percentiles, timeLabels } = data.monteCarlo;
+    const stepsPerYear =
+      timeLabels.length > 1
+        ? Math.max(Math.floor((percentiles.p50.length - 1) / (timeLabels.length - 1)), 1)
+        : 1;
+
+    return timeLabels.map((label, index) => {
+      const sourceIndex = Math.min(index * stepsPerYear, percentiles.p50.length - 1);
+      return {
+        label,
+        p10: percentiles.p10[sourceIndex],
+        p25: percentiles.p25[sourceIndex],
+        p50: percentiles.p50[sourceIndex],
+        p75: percentiles.p75[sourceIndex],
+        p90: percentiles.p90[sourceIndex],
+      };
+    });
+  }, [data]);
+
+  const maxCovariance = useMemo(() => {
+    if (!data || data.covarianceMatrix.length === 0) return 1;
+    return Math.max(
+      ...data.covarianceMatrix.flat().map((value) => Math.abs(value)),
+      0.000001
+    );
+  }, [data]);
+
+  const isScenarioDirty = useMemo(() => {
+    return JSON.stringify(controls) !== JSON.stringify(appliedControls);
+  }, [controls, appliedControls]);
+
+  const runScenario = () => {
+    setAppliedControls(controls);
+  };
+
+  const resetScenario = () => {
+    setControls(DEFAULT_CONTROLS);
+    setAppliedControls(DEFAULT_CONTROLS);
+  };
+
   return (
-    <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500">
-      {/* Header Section */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-        <div>
-          <h1 className="font-display font-bold text-3xl text-white mb-2 flex items-center">
-            <Eye className="w-8 h-8 mr-3 text-accent-secondary" />
-            Glass Box Engine
-          </h1>
-          <p className="text-text-secondary">Full transparency into how AETHER's AI makes decisions for your portfolio.</p>
+    <div className="mx-auto max-w-7xl space-y-6 animate-in fade-in duration-500">
+      <header className="flex flex-col gap-2">
+        <h1 className="flex items-center font-display text-3xl font-bold text-white">
+          <Eye className="mr-3 h-8 w-8 text-accent-secondary" />
+          Glass Box Engine
+        </h1>
+        <p className="text-sm text-text-secondary">
+          Transparent risk math with visible assumptions, covariance matrix, and Monte Carlo percentiles.
+        </p>
+      </header>
+
+      {error && (
+        <div className="rounded-xl border border-accent-danger/40 bg-accent-danger/10 px-4 py-3 text-sm text-accent-danger">
+          {error}
         </div>
-        <div className="flex gap-3">
-          <button className="px-4 py-2 rounded-lg bg-glass-bg border border-glass-border text-sm font-medium hover:bg-white/5 transition-colors flex items-center">
-            <Info className="w-4 h-4 mr-2" />
-            Methodology
-          </button>
-          <button className="px-4 py-2 rounded-lg bg-accent-secondary text-white text-sm font-medium hover:bg-accent-secondary/90 transition-colors shadow-[0_0_15px_rgba(59,130,246,0.3)] flex items-center">
-            <Zap className="w-4 h-4 mr-2" />
-            Run Diagnostics
-          </button>
-        </div>
-      </div>
+      )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* Left Column: Current AI State */}
-        <div className="lg:col-span-1 space-y-6">
-          <div className="glass-panel p-6 rounded-2xl border border-accent-secondary/30 relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-accent-secondary/10 rounded-full blur-3xl pointer-events-none"></div>
-            
-            <h2 className="font-display font-bold text-lg text-white mb-6 relative z-10">System Status</h2>
-            
-            <div className="space-y-6 relative z-10">
-              {/* Status Indicator */}
-              <div className="flex items-center justify-between p-4 rounded-xl bg-bg-dark/50 border border-glass-border">
-                <div className="flex items-center">
-                  <div className="w-3 h-3 rounded-full bg-accent-success mr-3 shadow-[0_0_8px_rgba(16,185,129,0.6)] animate-pulse"></div>
-                  <span className="text-sm font-medium text-white">Engine Active</span>
-                </div>
-                <span className="text-xs font-mono text-text-muted">v2.4.1</span>
-              </div>
-
-              {/* Data Sources */}
-              <div>
-                <h3 className="text-xs font-mono text-text-muted uppercase tracking-wider mb-3">Active Data Streams</h3>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-text-secondary flex items-center"><CheckCircle2 className="w-3 h-3 mr-2 text-accent-success" /> PSEi Real-time</span>
-                    <span className="text-white font-mono text-xs">Connected</span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-text-secondary flex items-center"><CheckCircle2 className="w-3 h-3 mr-2 text-accent-success" /> BSP Rates</span>
-                    <span className="text-white font-mono text-xs">Connected</span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-text-secondary flex items-center"><CheckCircle2 className="w-3 h-3 mr-2 text-accent-success" /> Global Macro (Fed)</span>
-                    <span className="text-white font-mono text-xs">Connected</span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-text-secondary flex items-center"><CheckCircle2 className="w-3 h-3 mr-2 text-accent-success" /> Your Brokerage API</span>
-                    <span className="text-white font-mono text-xs">Connected</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Confidence Score */}
-              <div>
-                <div className="flex justify-between items-end mb-2">
-                  <h3 className="text-xs font-mono text-text-muted uppercase tracking-wider">Model Confidence</h3>
-                  <span className="text-xl font-bold text-accent-secondary">92%</span>
-                </div>
-                <div className="w-full h-2 bg-bg-dark rounded-full overflow-hidden">
-                  <div className="h-full bg-accent-secondary rounded-full" style={{ width: '92%' }}></div>
-                </div>
-                <p className="text-[10px] text-text-muted mt-2">High confidence based on low market volatility and strong data correlation.</p>
-              </div>
-            </div>
+      <section className="glass-panel rounded-2xl border border-glass-border p-5">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="flex items-center font-display text-lg font-bold text-text-primary">
+            <SlidersHorizontal className="mr-2 h-4 w-4 text-accent-primary" />
+            Scenario Controls (Spec-aligned)
+          </h2>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={resetScenario}
+              className="inline-flex items-center gap-1 rounded-lg border border-glass-border bg-bg-surface px-3 py-2 text-xs font-medium text-text-primary hover:bg-white/5"
+            >
+              <RotateCcw className="h-3.5 w-3.5" /> Reset
+            </button>
+            <button
+              type="button"
+              onClick={runScenario}
+              className="inline-flex items-center gap-1 rounded-lg bg-accent-primary px-3 py-2 text-xs font-semibold text-[#09090B] hover:bg-accent-primary/90"
+            >
+              <Play className="h-3.5 w-3.5" /> Run Scenario
+            </button>
           </div>
         </div>
 
-        {/* Right Column: Decision Logic */}
-        <div className="lg:col-span-2 space-y-6">
-          <div className="glass-panel p-6 rounded-2xl border border-glass-border">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="font-display font-bold text-lg text-white">Recent AI Decision Matrix</h2>
-              <span className="text-xs font-mono text-text-muted">Last updated: 10 mins ago</span>
-            </div>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <label className="rounded-lg border border-glass-border bg-bg-surface p-3 text-xs text-text-muted">
+            Return Shift (%)
+            <input
+              type="number"
+              min={-20}
+              max={20}
+              step={0.25}
+              value={controls.returnShiftPct}
+              onChange={(event) => setControls((prev) => ({ ...prev, returnShiftPct: round(Number(event.target.value), 2) }))}
+              className="mt-1 w-full rounded-md border border-glass-border bg-bg-dark px-2 py-1.5 text-sm text-text-primary"
+            />
+          </label>
 
-            {/* Decision Item 1 */}
-            <div className="mb-8 relative">
-              <div className="absolute left-6 top-10 bottom-[-2rem] w-px bg-glass-border"></div>
-              
-              <div className="flex items-start gap-4 mb-4 relative z-10">
-                <div className="w-12 h-12 rounded-xl bg-accent-warning/10 flex items-center justify-center border border-accent-warning/30 shrink-0">
-                  <AlertTriangle className="w-6 h-6 text-accent-warning" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xs font-mono text-accent-warning bg-accent-warning/10 px-2 py-0.5 rounded border border-accent-warning/20">RECOMMENDATION</span>
-                    <span className="text-xs text-text-muted">ID: REB-8492</span>
-                  </div>
-                  <h3 className="text-lg font-bold text-white">Reduce PH Equity Exposure by 5%</h3>
-                  <p className="text-sm text-text-secondary mt-1">Triggered by shifting macroeconomic indicators and your risk profile.</p>
-                </div>
-              </div>
+          <label className="rounded-lg border border-glass-border bg-bg-surface p-3 text-xs text-text-muted">
+            Volatility Multiplier
+            <input
+              type="number"
+              min={0.5}
+              max={3}
+              step={0.05}
+              value={controls.volatilityMultiplier}
+              onChange={(event) => setControls((prev) => ({ ...prev, volatilityMultiplier: round(Number(event.target.value), 2) }))}
+              className="mt-1 w-full rounded-md border border-glass-border bg-bg-dark px-2 py-1.5 text-sm text-text-primary"
+            />
+          </label>
 
-              {/* The "Why" */}
-              <div className="ml-16 space-y-3">
-                <div className="p-4 rounded-xl bg-bg-dark/50 border border-glass-border">
-                  <h4 className="text-xs font-mono text-text-muted uppercase tracking-wider mb-3">The "Why" (Factor Analysis)</h4>
-                  
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="w-1.5 h-1.5 rounded-full bg-accent-danger"></div>
-                        <span className="text-sm text-white">Inflation Data (BSP)</span>
-                      </div>
-                      <span className="text-xs font-mono text-accent-danger">Weight: 40%</span>
-                    </div>
-                    <p className="text-xs text-text-muted pl-3.5 border-l border-glass-border ml-0.5">Recent CPI print came in higher than expected, signaling potential rate hikes which negatively impact local equities.</p>
+          <label className="rounded-lg border border-glass-border bg-bg-surface p-3 text-xs text-text-muted">
+            Base Correlation
+            <input
+              type="number"
+              min={0}
+              max={0.95}
+              step={0.01}
+              value={controls.baseCorrelation}
+              onChange={(event) => setControls((prev) => ({ ...prev, baseCorrelation: round(Number(event.target.value), 2) }))}
+              className="mt-1 w-full rounded-md border border-glass-border bg-bg-dark px-2 py-1.5 text-sm text-text-primary"
+            />
+          </label>
 
-                    <div className="flex items-center justify-between mt-3">
-                      <div className="flex items-center gap-2">
-                        <div className="w-1.5 h-1.5 rounded-full bg-accent-warning"></div>
-                        <span className="text-sm text-white">Portfolio Drift</span>
-                      </div>
-                      <span className="text-xs font-mono text-accent-warning">Weight: 35%</span>
-                    </div>
-                    <p className="text-xs text-text-muted pl-3.5 border-l border-glass-border ml-0.5">Your PH equity allocation drifted to 35% (Target: 30%) due to recent market gains. Taking profit is advised.</p>
+          <label className="rounded-lg border border-glass-border bg-bg-surface p-3 text-xs text-text-muted">
+            Risk-free Rate (%)
+            <input
+              type="number"
+              min={0}
+              max={25}
+              step={0.05}
+              value={controls.riskFreeRatePct}
+              onChange={(event) => setControls((prev) => ({ ...prev, riskFreeRatePct: round(Number(event.target.value), 2) }))}
+              className="mt-1 w-full rounded-md border border-glass-border bg-bg-dark px-2 py-1.5 text-sm text-text-primary"
+            />
+          </label>
 
-                    <div className="flex items-center justify-between mt-3">
-                      <div className="flex items-center gap-2">
-                        <div className="w-1.5 h-1.5 rounded-full bg-accent-success"></div>
-                        <span className="text-sm text-white">Global Tech Momentum</span>
-                      </div>
-                      <span className="text-xs font-mono text-accent-success">Weight: 25%</span>
-                    </div>
-                    <p className="text-xs text-text-muted pl-3.5 border-l border-glass-border ml-0.5">Strong signals in US tech sector provide a better risk-adjusted alternative for the redeployed capital.</p>
-                  </div>
-                </div>
-                
-                <button className="flex items-center text-sm text-accent-secondary hover:text-white transition-colors">
-                  View Full Mathematical Model <ArrowRight className="w-4 h-4 ml-1" />
-                </button>
-              </div>
-            </div>
+          <label className="rounded-lg border border-glass-border bg-bg-surface p-3 text-xs text-text-muted">
+            Horizon (Years)
+            <input
+              type="number"
+              min={1}
+              max={30}
+              step={1}
+              value={controls.years}
+              onChange={(event) => setControls((prev) => ({ ...prev, years: Math.round(Number(event.target.value) || 1) }))}
+              className="mt-1 w-full rounded-md border border-glass-border bg-bg-dark px-2 py-1.5 text-sm text-text-primary"
+            />
+          </label>
 
-            {/* Decision Item 2 */}
-            <div className="relative">
-              <div className="flex items-start gap-4 mb-4 relative z-10">
-                <div className="w-12 h-12 rounded-xl bg-accent-success/10 flex items-center justify-center border border-accent-success/30 shrink-0">
-                  <Shield className="w-6 h-6 text-accent-success" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xs font-mono text-accent-success bg-accent-success/10 px-2 py-0.5 rounded border border-accent-success/20">ACTION TAKEN</span>
-                    <span className="text-xs text-text-muted">ID: ACT-1024</span>
-                  </div>
-                  <h3 className="text-lg font-bold text-white">Auto-Harvested Tax Losses</h3>
-                  <p className="text-sm text-text-secondary mt-1">Executed sale of underperforming assets to offset recent capital gains.</p>
-                </div>
-              </div>
+          <label className="rounded-lg border border-glass-border bg-bg-surface p-3 text-xs text-text-muted">
+            Monte Carlo Paths
+            <input
+              type="number"
+              min={100}
+              max={5000}
+              step={100}
+              value={controls.paths}
+              onChange={(event) => setControls((prev) => ({ ...prev, paths: Math.round(Number(event.target.value) || 100) }))}
+              className="mt-1 w-full rounded-md border border-glass-border bg-bg-dark px-2 py-1.5 text-sm text-text-primary"
+            />
+          </label>
 
-              {/* The "Why" */}
-              <div className="ml-16 space-y-3">
-                <div className="p-4 rounded-xl bg-bg-dark/50 border border-glass-border">
-                  <h4 className="text-xs font-mono text-text-muted uppercase tracking-wider mb-3">Execution Logic</h4>
-                  
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="w-1.5 h-1.5 rounded-full bg-accent-success"></div>
-                        <span className="text-sm text-white">Tax Optimization Rule</span>
-                      </div>
-                      <span className="text-xs font-mono text-text-muted">Triggered</span>
-                    </div>
-                    <p className="text-xs text-text-muted pl-3.5 border-l border-glass-border ml-0.5">Identified ₱50,000 in unrealized losses in ACEN. Sold to offset gains from your recent property transaction, saving approx ₱7,500 in taxes.</p>
-                  </div>
-                </div>
-              </div>
-            </div>
+          <label className="rounded-lg border border-glass-border bg-bg-surface p-3 text-xs text-text-muted">
+            Monthly Contribution (PHP)
+            <input
+              type="number"
+              min={0}
+              max={1000000}
+              step={1000}
+              value={controls.monthlyContributionPhp}
+              onChange={(event) => setControls((prev) => ({ ...prev, monthlyContributionPhp: Math.round(Number(event.target.value) || 0) }))}
+              className="mt-1 w-full rounded-md border border-glass-border bg-bg-dark px-2 py-1.5 text-sm text-text-primary"
+            />
+          </label>
 
-          </div>
+          <label className="rounded-lg border border-glass-border bg-bg-surface p-3 text-xs text-text-muted">
+            Immediate Market Shock (%)
+            <input
+              type="number"
+              min={-80}
+              max={80}
+              step={0.5}
+              value={controls.marketShockPct}
+              onChange={(event) => setControls((prev) => ({ ...prev, marketShockPct: round(Number(event.target.value), 1) }))}
+              className="mt-1 w-full rounded-md border border-glass-border bg-bg-dark px-2 py-1.5 text-sm text-text-primary"
+            />
+          </label>
         </div>
-      </div>
+
+        {isScenarioDirty && (
+          <p className="mt-2 text-xs text-accent-warning">
+            Controls changed. Click <span className="font-semibold">Run Scenario</span> to recompute projections.
+          </p>
+        )}
+      </section>
+
+      <section className="grid grid-cols-1 gap-4 md:grid-cols-4">
+        <article className="glass-panel rounded-2xl border border-glass-border p-5">
+          <p className="text-xs uppercase tracking-[0.08em] text-text-muted">Variance (σp²)</p>
+          <p className="mt-2 text-2xl font-bold text-text-primary tabular-nums" style={{ fontFamily: "JetBrains Mono, monospace" }}>
+            {data ? data.variance.toFixed(6) : "..."}
+          </p>
+          <p className="mt-1 text-[11px] text-text-muted">σp² = wᵀΣw</p>
+        </article>
+
+        <article className="glass-panel rounded-2xl border border-glass-border p-5">
+          <p className="text-xs uppercase tracking-[0.08em] text-text-muted">Volatility (σ)</p>
+          <p className="mt-2 text-2xl font-bold text-accent-warning tabular-nums" style={{ fontFamily: "JetBrains Mono, monospace" }}>
+            {data ? formatPercent(data.stdDev) : "..."}
+          </p>
+          <p className="mt-1 text-[11px] text-text-muted">Annualized proxy estimate</p>
+        </article>
+
+        <article className="glass-panel rounded-2xl border border-glass-border p-5">
+          <p className="text-xs uppercase tracking-[0.08em] text-text-muted">Expected Return (μ)</p>
+          <p className="mt-2 text-2xl font-bold text-accent-success tabular-nums" style={{ fontFamily: "JetBrains Mono, monospace" }}>
+            {data ? formatPercent(data.expectedReturn) : "..."}
+          </p>
+          <p className="mt-1 text-[11px] text-text-muted">Weighted by current allocation</p>
+        </article>
+
+        <article className="glass-panel rounded-2xl border border-glass-border p-5">
+          <p className="text-xs uppercase tracking-[0.08em] text-text-muted">Sharpe Ratio</p>
+          <p className="mt-2 text-2xl font-bold text-accent-secondary tabular-nums" style={{ fontFamily: "JetBrains Mono, monospace" }}>
+            {data ? data.sharpeRatio.toFixed(2) : "..."}
+          </p>
+          <p className="mt-1 text-[11px] text-text-muted">Risk-free proxy: BSP rate</p>
+        </article>
+      </section>
+
+      <section className="glass-panel rounded-2xl border border-glass-border p-6">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="font-display text-lg font-bold text-text-primary">Monte Carlo Projection</h2>
+          <span className="text-xs text-text-muted">10th / 25th / 50th / 75th / 90th percentiles</span>
+        </div>
+
+        <div className="h-[340px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={chartData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--color-glass-border)" vertical={false} />
+              <XAxis dataKey="label" stroke="var(--color-text-muted)" fontSize={12} tickLine={false} axisLine={false} />
+              <YAxis
+                stroke="var(--color-text-muted)"
+                fontSize={12}
+                tickLine={false}
+                axisLine={false}
+                tickFormatter={(value) => `₱${(Number(value) / 1_000_000).toFixed(1)}M`}
+              />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: "var(--color-bg-card)",
+                  borderColor: "var(--color-glass-border)",
+                  borderRadius: "8px",
+                }}
+                formatter={(value: unknown, name: unknown) => {
+                  const numeric = typeof value === "number" ? value : Number(value);
+                  return [
+                    formatCurrency(Number.isFinite(numeric) ? numeric : 0),
+                    String(name || "Value").toUpperCase(),
+                  ];
+                }}
+              />
+              <Legend />
+              <Line type="monotone" dataKey="p10" stroke="rgba(248,113,113,0.8)" dot={false} name="10th" strokeWidth={1.8} />
+              <Line type="monotone" dataKey="p25" stroke="rgba(245,158,11,0.8)" dot={false} name="25th" strokeWidth={1.8} />
+              <Line type="monotone" dataKey="p50" stroke="var(--color-accent-primary)" dot={false} name="50th (median)" strokeWidth={2.8} />
+              <Line type="monotone" dataKey="p75" stroke="rgba(16,185,129,0.8)" dot={false} name="75th" strokeWidth={1.8} />
+              <Line type="monotone" dataKey="p90" stroke="rgba(59,130,246,0.8)" dot={false} name="90th" strokeWidth={1.8} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+
+        {data && (
+          <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-4">
+            <div className="rounded-lg border border-glass-border bg-bg-surface p-3">
+              <p className="text-[11px] uppercase tracking-[0.08em] text-text-muted">Mean Terminal</p>
+              <p className="mt-1 text-sm font-semibold text-text-primary">{formatCurrency(data.monteCarlo.stats.mean)}</p>
+            </div>
+            <div className="rounded-lg border border-glass-border bg-bg-surface p-3">
+              <p className="text-[11px] uppercase tracking-[0.08em] text-text-muted">Median Terminal</p>
+              <p className="mt-1 text-sm font-semibold text-text-primary">{formatCurrency(data.monteCarlo.stats.median)}</p>
+            </div>
+            <div className="rounded-lg border border-glass-border bg-bg-surface p-3">
+              <p className="text-[11px] uppercase tracking-[0.08em] text-text-muted">Worst / Best</p>
+              <p className="mt-1 text-sm font-semibold text-text-primary">
+                {formatCurrency(data.monteCarlo.stats.min)} / {formatCurrency(data.monteCarlo.stats.max)}
+              </p>
+            </div>
+            <div className="rounded-lg border border-glass-border bg-bg-surface p-3">
+              <p className="text-[11px] uppercase tracking-[0.08em] text-text-muted">Probability of Loss</p>
+              <p className="mt-1 text-sm font-semibold text-accent-danger">{formatPercent(data.monteCarlo.stats.probLoss)}</p>
+            </div>
+          </div>
+        )}
+
+        {data?.assumptions && (
+          <div className="mt-4 rounded-lg border border-glass-border bg-bg-surface p-3 text-xs text-text-secondary">
+            Scenario assumptions: shift {data.assumptions.returnShiftPct.toFixed(2)}%, volatility x{data.assumptions.volatilityMultiplier.toFixed(2)},
+            correlation {data.assumptions.baseCorrelation.toFixed(2)}, horizon {data.assumptions.years} years, paths {data.assumptions.paths},
+            monthly contribution {formatCurrency(data.assumptions.monthlyContributionPhp)}, market shock {(data.assumptions.marketShockPct * 100).toFixed(1)}%.
+          </div>
+        )}
+      </section>
+
+      <section className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <article className="glass-panel rounded-2xl border border-glass-border p-5 lg:col-span-1">
+          <h3 className="mb-3 flex items-center font-display text-lg font-bold text-text-primary">
+            <Activity className="mr-2 h-4 w-4 text-accent-primary" />
+            Weights (w)
+          </h3>
+
+          <div className="space-y-2">
+            {data?.weights.map((weightRow) => (
+              <div key={`${weightRow.name}-${weightRow.assetClass}`} className="flex items-center justify-between rounded-lg border border-glass-border bg-bg-surface px-3 py-2 text-sm">
+                <span className="truncate text-text-secondary">{weightRow.name}</span>
+                <span className="ml-3 tabular-nums text-text-primary" style={{ fontFamily: "JetBrains Mono, monospace" }}>
+                  {formatPercent(weightRow.weight)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </article>
+
+        <article className="glass-panel rounded-2xl border border-glass-border p-5 lg:col-span-2">
+          <h3 className="mb-3 flex items-center font-display text-lg font-bold text-text-primary">
+            <Sigma className="mr-2 h-4 w-4 text-accent-secondary" />
+            Covariance Matrix (Σ)
+          </h3>
+
+          {loading && (
+            <p className="text-sm text-text-muted">Running covariance and simulation...</p>
+          )}
+
+          {!loading && data && (
+            <div className="overflow-x-auto">
+              <table className="min-w-[520px] border-collapse text-xs">
+                <thead>
+                  <tr>
+                    <th className="px-2 py-2 text-left text-text-muted">Asset</th>
+                    {data.weights.map((_, colIndex) => (
+                      <th key={`col-${colIndex}`} className="px-2 py-2 text-center text-text-muted">
+                        A{colIndex + 1}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.covarianceMatrix.map((row, rowIndex) => (
+                    <tr key={`row-${rowIndex}`}>
+                      <td className="px-2 py-2 text-text-secondary">A{rowIndex + 1}</td>
+                      {row.map((value, colIndex) => {
+                        const intensity = Math.min(Math.abs(value) / maxCovariance, 1);
+                        const background = `rgba(110, 231, 183, ${0.08 + intensity * 0.42})`;
+                        return (
+                          <td
+                            key={`cell-${rowIndex}-${colIndex}`}
+                            className="px-2 py-2 text-center tabular-nums text-text-primary"
+                            style={{ backgroundColor: background, fontFamily: "JetBrains Mono, monospace" }}
+                          >
+                            {value.toFixed(4)}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {!loading && !data && !error && (
+            <div className="rounded-lg border border-accent-warning/40 bg-accent-warning/10 p-4 text-sm text-text-secondary">
+              Add at least one asset to view Glass Box analytics.
+            </div>
+          )}
+        </article>
+      </section>
+
+      <section className="rounded-xl border border-accent-warning/40 bg-accent-warning/10 px-4 py-3 text-xs text-text-secondary">
+        <p className="inline-flex items-center font-semibold text-accent-warning">
+          <ShieldAlert className="mr-1 h-3.5 w-3.5" />
+          Assumptions Notice
+        </p>
+        <p className="mt-1">
+          This MVP uses proxy expected returns, volatilities, and correlations per asset class. Use the results for directional planning, not guaranteed outcomes.
+        </p>
+      </section>
+
+      {data?.interpretation && (
+        <section className="glass-panel rounded-2xl border border-glass-border p-5">
+          <h2 className="mb-2 flex items-center font-display text-lg font-bold text-text-primary">
+            <FileText className="mr-2 h-4 w-4 text-accent-secondary" />
+            Computation Summary & Interpretation
+          </h2>
+          <p className="text-sm text-text-secondary">{data.interpretation.summary}</p>
+          <ul className="mt-3 space-y-2 text-sm text-text-secondary">
+            {data.interpretation.keyPoints.map((point, index) => (
+              <li key={`interpretation-${index}`} className="rounded-lg border border-glass-border bg-bg-surface px-3 py-2">
+                {point}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </div>
   );
 }

@@ -1,0 +1,16 @@
+Name,Ticker,Type,Qty,Avg Cost,Currency,Manual Price
+BDO Unibank,BDO,PH Stocks,500,128.50,PHP,138.60
+SM Investments,SM,PH Stocks,100,910.00,PHP,975.00
+Jollibee Foods,JFC,PH Stocks,240,245.50,PHP,256.00
+First Metro ETF,FMETF,PH Stocks,180,107.20,PHP,112.30
+Apple Inc.,AAPL,US Stocks,10,178.20,USD,189.30
+NVIDIA Corp,NVDA,US Stocks,5,480.00,USD,875.00
+Microsoft Corp,MSFT,US Stocks,8,380.00,USD,412.00
+Amazon.com Inc,AMZN,US Stocks,6,145.00,USD,178.00
+Bitcoin,BTC,Crypto,0.0500,42000,USD,
+Ethereum,ETH,Crypto,1.2000,2200,USD,
+Cardano,ADA,Crypto,3000.0000,0.42,USD,
+Cash Reserve,CASH-PHP,Cash,1,50000,PHP,50000
+RTB 2031,RTB2031,Bonds,1,150000,PHP,150000
+Condo Unit BGC,TAN-1001,Tangible Assets,1,8500000,PHP,8500000
+Gold Bar 100g,TAN-1002,Tangible Assets,1,410000,PHP,410000

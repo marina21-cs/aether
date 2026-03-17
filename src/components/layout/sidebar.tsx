@@ -1,0 +1,195 @@
+import { NavLink, useLocation } from "react-router-dom";
+import { useState } from "react";
+import {
+  LayoutDashboard,
+  PieChart,
+  LineChart,
+  Brain,
+  Calculator,
+  BadgePercent,
+  TrendingUp,
+  Settings,
+  FileText,
+  Bell,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
+import { cn } from "@/src/lib/utils";
+
+const mainNav = [
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/dashboard/holdings", label: "Holdings", icon: PieChart },
+  { href: "/dashboard/market", label: "Market Updates", icon: LineChart },
+  { href: "/dashboard/data", label: "Data Import", icon: FileText },
+];
+
+const analysisNav = [
+  { href: "/dashboard/advisor", label: "AI Advisor", icon: Brain },
+  { href: "/dashboard/glass-box", label: "Glass Box", icon: Calculator },
+  { href: "/dashboard/fees", label: "Fee Analyzer", icon: BadgePercent },
+  { href: "/dashboard/performance", label: "Performance", icon: TrendingUp },
+  { href: "/dashboard/alerts", label: "Alerts", icon: Bell },
+];
+
+const settingsNav = [
+  { href: "/dashboard/settings", label: "Settings", icon: Settings },
+];
+
+function NavSection({
+  label,
+  items,
+  pathname,
+  collapsed,
+}: {
+  label: string;
+  items: typeof mainNav;
+  pathname: string;
+  collapsed: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      {!collapsed && (
+        <span className="mb-1 px-3 font-body text-[11px] font-medium uppercase tracking-[0.1em] text-text-muted">
+          {label}
+        </span>
+      )}
+      {items.map((item) => {
+        const isActive = pathname === item.href;
+        return (
+          <NavLink
+            key={item.href}
+            to={item.href}
+            title={collapsed ? item.label : undefined}
+            className={cn(
+              "flex items-center gap-2.5 rounded-[8px] px-3 font-body text-sm transition-all duration-200",
+              collapsed ? "h-10 justify-center" : "h-10",
+              isActive
+                ? "bg-accent-subtle text-accent-primary"
+                : "text-text-muted hover:bg-[rgba(255,255,255,0.04)] hover:text-text-primary"
+            )}
+          >
+            <item.icon
+              size={18}
+              className={cn(
+                "flex-shrink-0",
+                isActive ? "text-accent-primary" : ""
+              )}
+              aria-hidden="true"
+            />
+            {!collapsed && item.label}
+          </NavLink>
+        );
+      })}
+    </div>
+  );
+}
+
+interface SidebarProps {
+  fxRate?: number | null;
+  fxStatus?: "fresh" | "stale";
+  collapsed: boolean;
+  onToggleCollapse: () => void;
+}
+
+export function Sidebar({ fxRate, fxStatus = "fresh", collapsed, onToggleCollapse }: SidebarProps) {
+  const location = useLocation();
+  const pathname = location.pathname;
+
+  return (
+    <aside
+      className={cn(
+        "fixed left-0 top-0 z-40 flex h-screen flex-col border-r transition-all duration-300",
+        collapsed ? "w-[72px]" : "w-[240px]"
+      )}
+      style={{
+        backgroundColor: "#111113",
+        borderColor: "rgba(255,255,255,0.07)",
+      }}
+    >
+      {/* Brand */}
+      <div className="flex h-16 items-center justify-between px-4">
+        <NavLink
+          to="/dashboard"
+          className="flex items-center gap-2.5"
+          aria-label="AETHER Home"
+        >
+          <svg
+            width="28"
+            height="28"
+            viewBox="0 0 28 28"
+            fill="none"
+            aria-hidden="true"
+          >
+            <rect width="28" height="28" rx="8" fill="#6EE7B7" fillOpacity="0.15" />
+            <path
+              d="M14 6L20 22H8L14 6Z"
+              stroke="#6EE7B7"
+              strokeWidth="1.5"
+              strokeLinejoin="round"
+              fill="none"
+            />
+            <line x1="10.5" y1="16" x2="17.5" y2="16" stroke="#6EE7B7" strokeWidth="1.5" />
+          </svg>
+          {!collapsed && (
+            <span
+              className="text-[1.1rem] font-bold tracking-[0.12em]"
+              style={{ fontFamily: "TT Bakers, serif", color: "#F4F4F5" }}
+            >
+              AETHER
+            </span>
+          )}
+        </NavLink>
+        <button
+          onClick={onToggleCollapse}
+          className="flex h-7 w-7 items-center justify-center rounded-md text-text-muted hover:bg-[rgba(255,255,255,0.05)] hover:text-text-primary transition-colors"
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+        </button>
+      </div>
+
+      {/* Navigation */}
+      <nav className="flex flex-1 flex-col gap-6 overflow-y-auto px-3 py-4">
+        <NavSection label="Main" items={mainNav} pathname={pathname} collapsed={collapsed} />
+        <NavSection label="Analysis" items={analysisNav} pathname={pathname} collapsed={collapsed} />
+        <NavSection label="Account" items={settingsNav} pathname={pathname} collapsed={collapsed} />
+      </nav>
+
+      {/* FX Rate (bottom) */}
+      <div
+        className="border-t px-4 py-3"
+        style={{ borderColor: "rgba(255,255,255,0.07)" }}
+      >
+        {!collapsed ? (
+          <div className="flex items-center gap-2">
+            <span
+              className={cn(
+                "inline-block h-2 w-2 rounded-full",
+                fxStatus === "fresh" ? "bg-accent-primary pulse-dot" : "bg-accent-warning"
+              )}
+            />
+            <span
+              className="text-xs text-text-muted"
+              style={{ fontFamily: "JetBrains Mono, monospace" }}
+            >
+              {fxRate ? `$1 = ₱${fxRate.toFixed(2)}` : "Loading FX..."}
+            </span>
+            {fxStatus === "stale" && (
+              <span className="text-[10px] text-accent-warning">stale</span>
+            )}
+          </div>
+        ) : (
+          <div className="flex justify-center">
+            <span
+              className={cn(
+                "inline-block h-2 w-2 rounded-full",
+                fxStatus === "fresh" ? "bg-accent-primary pulse-dot" : "bg-accent-warning"
+              )}
+              title={fxRate ? `$1 = ₱${fxRate.toFixed(2)}` : "Loading FX..."}
+            />
+          </div>
+        )}
+      </div>
+    </aside>
+  );
+}
