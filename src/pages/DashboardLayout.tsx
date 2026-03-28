@@ -238,6 +238,7 @@ export default function DashboardLayout() {
     }
 
     let cancelled = false;
+    const fallbackController = new AbortController();
     const userId = user.id;
 
     if (lastHydratedUserIdRef.current !== userId) {
@@ -280,10 +281,20 @@ export default function DashboardLayout() {
         }
 
         if (!hydratedAssets) {
-          const response = await fetch(
-            apiUrl(`/api/v1/data/assets?userId=${encodeURIComponent(userId)}`)
-          );
-          const payload = await parseApiPayload(response);
+          const fallbackTimeoutId = window.setTimeout(() => {
+            fallbackController.abort();
+          }, 8000);
+
+          let response: Response;
+          let payload: unknown;
+          try {
+            response = await fetch(apiUrl(`/api/v1/data/assets?userId=${encodeURIComponent(userId)}`), {
+              signal: fallbackController.signal,
+            });
+            payload = await parseApiPayload(response);
+          } finally {
+            window.clearTimeout(fallbackTimeoutId);
+          }
 
           if (!response.ok) {
             throw new Error(
@@ -319,6 +330,7 @@ export default function DashboardLayout() {
 
     return () => {
       cancelled = true;
+      fallbackController.abort();
     };
   }, [user, isLoaded, getToken]);
 

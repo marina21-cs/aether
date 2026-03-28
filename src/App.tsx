@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useUser } from "@clerk/react";
 import { apiUrl } from "@/src/lib/api/client";
@@ -22,15 +22,11 @@ import { Alerts } from "./pages/Alerts";
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const { isLoaded, isSignedIn, user } = useUser();
-  const [isEnsuringProfile, setIsEnsuringProfile] = useState(true);
-  const [ensureError, setEnsureError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isLoaded) return;
 
     if (!isSignedIn || !user?.id) {
-      setIsEnsuringProfile(false);
-      setEnsureError(null);
       return;
     }
 
@@ -39,12 +35,12 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
     const userFullName = user.fullName ?? null;
 
     const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => {
+      controller.abort();
+    }, 8000);
     let active = true;
 
     async function ensureProfile() {
-      setIsEnsuringProfile(true);
-      setEnsureError(null);
-
       try {
         const response = await fetch(apiUrl("/api/v1/user/ensure-profile"), {
           method: "POST",
@@ -63,17 +59,18 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
           const details = (await response.json().catch(() => null)) as
             | { error?: { message?: string } }
             | null;
-          throw new Error(details?.error?.message || `Profile bootstrap failed (${response.status}).`);
+          throw new Error(
+            details?.error?.message || `Profile bootstrap failed (${response.status}).`
+          );
         }
       } catch (error) {
         if (!active || (error as Error).name === "AbortError") return;
-        setEnsureError(
-          error instanceof Error ? error.message : "Failed to initialize account profile."
+        console.warn(
+          "Proceeding without blocking route: profile bootstrap failed.",
+          error
         );
       } finally {
-        if (active) {
-          setIsEnsuringProfile(false);
-        }
+        window.clearTimeout(timeoutId);
       }
     }
 
@@ -81,6 +78,7 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 
     return () => {
       active = false;
+      window.clearTimeout(timeoutId);
       controller.abort();
     };
   }, [
@@ -91,7 +89,7 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
     user?.primaryEmailAddress?.emailAddress,
   ]);
 
-  if (!isLoaded || (isSignedIn && isEnsuringProfile)) {
+  if (!isLoaded) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-bg-primary">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent-primary border-t-transparent" />
@@ -101,24 +99,6 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 
   if (!isSignedIn) {
     return <Navigate to="/sign-in" replace />;
-  }
-
-  if (ensureError) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-bg-primary px-6">
-        <div className="w-full max-w-md rounded-xl border border-accent-danger/40 bg-accent-danger/10 p-5 text-center">
-          <p className="text-sm font-semibold text-accent-danger">Account Initialization Failed</p>
-          <p className="mt-2 text-sm text-text-secondary">{ensureError}</p>
-          <button
-            type="button"
-            onClick={() => window.location.reload()}
-            className="mt-4 inline-flex rounded-lg border border-glass-border bg-bg-surface px-3 py-2 text-xs text-text-primary hover:bg-white/5"
-          >
-            Retry
-          </button>
-        </div>
-      </div>
-    );
   }
 
   return <>{children}</>;
