@@ -1,4 +1,4 @@
-import { apiUrl } from "@/src/lib/api/client";
+import { apiFetch } from "@/src/lib/api/client";
 
 interface ErrorPayload {
   error?: {
@@ -156,12 +156,16 @@ export interface UserSettingsResponse {
 }
 
 export async function getFeeScan(userId: string): Promise<FeeScanResponse> {
-  const response = await fetch(apiUrl(`/api/v1/analytics/fee-scan?userId=${encodeURIComponent(userId)}`));
+  const response = await apiFetch(
+    `/api/v1/analytics/fee-scan?userId=${encodeURIComponent(userId)}`
+  );
   return parseJson<FeeScanResponse>(response);
 }
 
 export async function getRealReturn(userId: string): Promise<RealReturnResponse> {
-  const response = await fetch(apiUrl(`/api/v1/analytics/real-return?userId=${encodeURIComponent(userId)}`));
+  const response = await apiFetch(
+    `/api/v1/analytics/real-return?userId=${encodeURIComponent(userId)}`
+  );
   return parseJson<RealReturnResponse>(response);
 }
 
@@ -174,12 +178,14 @@ export async function getGlassBox(userId: string, query?: GlassBoxQuery): Promis
     }
   }
 
-  const response = await fetch(apiUrl(`/api/v1/analytics/glass-box?${params.toString()}`));
+  const response = await apiFetch(`/api/v1/analytics/glass-box?${params.toString()}`);
   return parseJson<GlassBoxResponse>(response);
 }
 
 export async function getUserSettings(userId: string): Promise<UserSettingsResponse> {
-  const response = await fetch(apiUrl(`/api/v1/user/settings?userId=${encodeURIComponent(userId)}`));
+  const response = await apiFetch(
+    `/api/v1/user/settings?userId=${encodeURIComponent(userId)}`
+  );
   return parseJson<UserSettingsResponse>(response);
 }
 
@@ -190,7 +196,7 @@ export async function updateUserSettings(
     base_currency?: "PHP" | "USD" | "SGD" | "HKD";
   }
 ): Promise<{ success: boolean }> {
-  const response = await fetch(apiUrl("/api/v1/user/risk-profile"), {
+  const response = await apiFetch("/api/v1/user/risk-profile", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ userId, ...payload }),

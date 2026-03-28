@@ -6,7 +6,7 @@ import {
   CRYPTO_NAME_BY_TICKER,
   TRACKED_CRYPTO_TICKERS,
 } from "@/src/lib/market-universe";
-import { apiUrl } from "@/src/lib/api/client";
+import { apiFetch } from "@/src/lib/api/client";
 
 type RegionFilter = "All" | "PH" | "US" | "Global" | "Commodities";
 type MarketTheme =
@@ -316,8 +316,8 @@ export default function MarketUpdates() {
 
   const refreshLiveBoardQuotes = useCallback(async () => {
     try {
-      const response = await fetch(
-        apiUrl(`/api/v1/market/quotes?symbols=${encodeURIComponent(marketBoardSymbols.join(","))}`)
+      const response = await apiFetch(
+        `/api/v1/market/quotes?symbols=${encodeURIComponent(marketBoardSymbols.join(","))}`
       );
 
       if (!response.ok) {

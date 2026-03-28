@@ -1,4 +1,4 @@
-import { apiUrl } from "@/src/lib/api/client";
+import { apiFetch } from "@/src/lib/api/client";
 import type {
   Alert,
   AlertCondition,
@@ -69,7 +69,7 @@ export async function runSimulatorScenario(payload: {
   monthlySavings: number;
   modifications: ScenarioModification[];
 }): Promise<ScenarioSimulationOutput> {
-  const response = await fetch(apiUrl("/api/v1/simulator/run"), {
+  const response = await apiFetch("/api/v1/simulator/run", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -79,8 +79,8 @@ export async function runSimulatorScenario(payload: {
 }
 
 export async function listSimulatorScenarios(userId: string): Promise<Scenario[]> {
-  const response = await fetch(
-    apiUrl(`/api/v1/simulator/scenarios?userId=${encodeURIComponent(userId)}`)
+  const response = await apiFetch(
+    `/api/v1/simulator/scenarios?userId=${encodeURIComponent(userId)}`
   );
   const payload = await parseJson<{ scenarios: Scenario[] }>(response);
   return payload.scenarios || [];
@@ -96,7 +96,7 @@ export async function createSimulatorScenario(payload: {
   };
   modifications: ScenarioModification[];
 }): Promise<Scenario> {
-  const response = await fetch(apiUrl("/api/v1/simulator/scenarios"), {
+  const response = await apiFetch("/api/v1/simulator/scenarios", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -107,8 +107,8 @@ export async function createSimulatorScenario(payload: {
 }
 
 export async function deleteSimulatorScenario(userId: string, scenarioId: string): Promise<void> {
-  const response = await fetch(
-    apiUrl(`/api/v1/simulator/scenarios/${encodeURIComponent(scenarioId)}?userId=${encodeURIComponent(userId)}`),
+  const response = await apiFetch(
+    `/api/v1/simulator/scenarios/${encodeURIComponent(scenarioId)}?userId=${encodeURIComponent(userId)}`,
     { method: "DELETE" }
   );
 
@@ -116,7 +116,9 @@ export async function deleteSimulatorScenario(userId: string, scenarioId: string
 }
 
 export async function listAlerts(userId: string): Promise<Alert[]> {
-  const response = await fetch(apiUrl(`/api/v1/alerts?userId=${encodeURIComponent(userId)}`));
+  const response = await apiFetch(
+    `/api/v1/alerts?userId=${encodeURIComponent(userId)}`
+  );
   const payload = await parseJson<{ alerts: Alert[] }>(response);
   return payload.alerts || [];
 }
@@ -128,7 +130,7 @@ export async function createAlert(payload: {
   threshold: number;
   asset_ticker?: string | null;
 }): Promise<Alert> {
-  const response = await fetch(apiUrl("/api/v1/alerts"), {
+  const response = await apiFetch("/api/v1/alerts", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -146,7 +148,7 @@ export async function updateAlert(payload: {
   threshold?: number;
 }): Promise<Alert> {
   const { userId, alertId, ...rest } = payload;
-  const response = await fetch(apiUrl(`/api/v1/alerts/${encodeURIComponent(alertId)}`), {
+  const response = await apiFetch(`/api/v1/alerts/${encodeURIComponent(alertId)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ userId, ...rest }),
@@ -157,8 +159,8 @@ export async function updateAlert(payload: {
 }
 
 export async function deleteAlert(userId: string, alertId: string): Promise<void> {
-  const response = await fetch(
-    apiUrl(`/api/v1/alerts/${encodeURIComponent(alertId)}?userId=${encodeURIComponent(userId)}`),
+  const response = await apiFetch(
+    `/api/v1/alerts/${encodeURIComponent(alertId)}?userId=${encodeURIComponent(userId)}`,
     { method: "DELETE" }
   );
 
@@ -166,7 +168,9 @@ export async function deleteAlert(userId: string, alertId: string): Promise<void
 }
 
 export async function listAlertHistory(userId: string): Promise<AlertHistoryEntry[]> {
-  const response = await fetch(apiUrl(`/api/v1/alerts/history?userId=${encodeURIComponent(userId)}`));
+  const response = await apiFetch(
+    `/api/v1/alerts/history?userId=${encodeURIComponent(userId)}`
+  );
   const payload = await parseJson<{ history: AlertHistoryEntry[] }>(response);
   return payload.history || [];
 }
@@ -175,7 +179,7 @@ export async function runAlertCheck(userId: string, previousPortfolioValue?: num
   triggeredCount: number;
   intervalMs: number;
 }> {
-  const response = await fetch(apiUrl("/api/v1/alerts/check"), {
+  const response = await apiFetch("/api/v1/alerts/check", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ userId, previousPortfolioValue }),
@@ -185,13 +189,15 @@ export async function runAlertCheck(userId: string, previousPortfolioValue?: num
 }
 
 export async function listNotifications(userId: string): Promise<NotificationEntry[]> {
-  const response = await fetch(apiUrl(`/api/v1/notifications?userId=${encodeURIComponent(userId)}`));
+  const response = await apiFetch(
+    `/api/v1/notifications?userId=${encodeURIComponent(userId)}`
+  );
   const payload = await parseJson<{ notifications: NotificationEntry[] }>(response);
   return payload.notifications || [];
 }
 
 export async function markNotificationsRead(userId: string, notificationId?: string): Promise<void> {
-  const response = await fetch(apiUrl("/api/v1/notifications/read"), {
+  const response = await apiFetch("/api/v1/notifications/read", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ userId, notificationId }),
@@ -201,7 +207,7 @@ export async function markNotificationsRead(userId: string, notificationId?: str
 }
 
 export async function sendTestDigest(userId: string): Promise<void> {
-  const response = await fetch(apiUrl("/api/v1/digest/send-test"), {
+  const response = await apiFetch("/api/v1/digest/send-test", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ userId }),

@@ -1,7 +1,7 @@
 import { type ReactNode, useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useUser } from "@clerk/react";
-import { apiUrl } from "@/src/lib/api/client";
+import { apiFetch } from "@/src/lib/api/client";
 
 import LandingPage from "./pages/LandingPage";
 import SignInPage from "./pages/SignInPage";
@@ -42,7 +42,7 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 
     async function ensureProfile() {
       try {
-        const response = await fetch(apiUrl("/api/v1/user/ensure-profile"), {
+        const response = await apiFetch("/api/v1/user/ensure-profile", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

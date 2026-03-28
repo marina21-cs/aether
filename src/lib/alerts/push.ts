@@ -1,4 +1,4 @@
-import { apiUrl } from "@/src/lib/api/client";
+import { apiFetch } from "@/src/lib/api/client";
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -42,7 +42,7 @@ export async function registerPushSubscription(userId: string): Promise<void> {
     throw new Error("Failed to extract push subscription keys.");
   }
 
-  const response = await fetch(apiUrl("/api/v1/alerts/subscribe"), {
+  const response = await apiFetch("/api/v1/alerts/subscribe", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

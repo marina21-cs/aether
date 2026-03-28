@@ -8,7 +8,7 @@ import { createAuthClient } from "@/src/lib/supabase/client";
 import { UserButton } from "@clerk/react";
 import { useExchangeRate } from "@/src/hooks/use-exchange-rate";
 import { useCryptoPrices } from "@/src/hooks/use-crypto-prices";
-import { apiUrl } from "@/src/lib/api/client";
+import { apiFetch } from "@/src/lib/api/client";
 import type { Asset } from "@/src/types/database";
 import { MessageSquare } from "lucide-react";
 import { CurrencySwitcher } from "@/src/components/currency/currency-switcher";
@@ -288,9 +288,12 @@ export default function DashboardLayout() {
           let response: Response;
           let payload: unknown;
           try {
-            response = await fetch(apiUrl(`/api/v1/data/assets?userId=${encodeURIComponent(userId)}`), {
+            response = await apiFetch(
+              `/api/v1/data/assets?userId=${encodeURIComponent(userId)}`,
+              {
               signal: fallbackController.signal,
-            });
+              }
+            );
             payload = await parseApiPayload(response);
           } finally {
             window.clearTimeout(fallbackTimeoutId);

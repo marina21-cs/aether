@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useUser } from "@clerk/react";
 import { Plus, X } from "lucide-react";
 import { useDashboard, type Holding } from "@/src/pages/DashboardLayout";
-import { apiUrl } from "@/src/lib/api/client";
+import { apiFetch } from "@/src/lib/api/client";
 
 interface AddAssetDialogProps {
 	open: boolean;
@@ -104,7 +104,7 @@ export function AddAssetDialog({ open, onClose }: AddAssetDialogProps) {
 	const persistHoldings = async (nextHoldings: Holding[]) => {
 		if (!user) return;
 
-		const response = await fetch(apiUrl("/api/v1/data/save-assets"), {
+		const response = await apiFetch("/api/v1/data/save-assets", {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({

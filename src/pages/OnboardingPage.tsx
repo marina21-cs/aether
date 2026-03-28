@@ -6,7 +6,7 @@ import { BrandPanel } from "@/src/components/auth/brand-panel";
 import { RiskProfileStep } from "@/src/components/onboarding/risk-profile-step";
 import { CurrencyStep } from "@/src/components/onboarding/currency-step";
 import { WelcomeStep } from "@/src/components/onboarding/welcome-step";
-import { apiUrl } from "@/src/lib/api/client";
+import { apiFetch } from "@/src/lib/api/client";
 import type { RiskTolerance, BaseCurrency } from "@/src/types/database";
 
 type Step = "risk" | "currency" | "welcome";
@@ -28,7 +28,7 @@ export default function OnboardingPage() {
   async function saveOnboarding() {
     if (!user) return;
 
-    const response = await fetch(apiUrl("/api/v1/user/ensure-profile"), {
+    const response = await apiFetch("/api/v1/user/ensure-profile", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

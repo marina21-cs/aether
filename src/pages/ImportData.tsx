@@ -15,7 +15,7 @@ import {
 import Papa from "papaparse";
 import { useDashboard, type Holding } from "./DashboardLayout";
 import { cn } from "@/src/lib/utils";
-import { apiUrl } from "@/src/lib/api/client";
+import { apiFetch } from "@/src/lib/api/client";
 
 type TangibleCategory =
   | "vehicle"
@@ -514,7 +514,7 @@ export function ImportData() {
       return;
     }
 
-    const response = await fetch(apiUrl("/api/v1/data/save-assets"), {
+    const response = await apiFetch("/api/v1/data/save-assets", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -593,7 +593,7 @@ export function ImportData() {
   };
 
   const analyzeCsvOnServer = async (csvText: string): Promise<CsvAnalyzeResponse> => {
-    const response = await fetch(apiUrl("/api/v1/data/analyze-csv"), {
+    const response = await apiFetch("/api/v1/data/analyze-csv", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -924,8 +924,8 @@ export function ImportData() {
     }
 
     try {
-      const response = await fetch(
-        apiUrl(`/api/v1/data/assets?userId=${encodeURIComponent(user.id)}`)
+      const response = await apiFetch(
+        `/api/v1/data/assets?userId=${encodeURIComponent(user.id)}`
       );
       const payload = await parseApiPayload(response);
       if (!response.ok) {

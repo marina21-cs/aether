@@ -57,6 +57,12 @@ const PH_CPI_RATE = Number(process.env.PH_CPI_RATE || 6.1);
 const PH_PSEI_LEVEL = Number(process.env.PH_PSEI_LEVEL || 6800);
 const APP_URL = process.env.VITE_APP_URL || "http://localhost:3000";
 const APP_NAME = process.env.VITE_APP_NAME || "AETHER";
+const CORS_ALLOWED_ORIGINS = (process.env.CORS_ALLOWED_ORIGINS || "")
+  .split(",")
+  .map((value) => value.trim())
+  .filter((value) => value.length > 0);
+const ALLOW_VERCEL_PREVIEW_ORIGINS =
+  (process.env.ALLOW_VERCEL_PREVIEW_ORIGINS || "true").toLowerCase() !== "false";
 const EXCHANGE_RATE_API_KEY = process.env.VITE_EXCHANGE_RATE_API_KEY || "";
 const MARKET_QUOTE_TIMEOUT_MS = Math.max(
   1500,
@@ -96,6 +102,51 @@ const RAG_ADMIN_USER_IDS = new Set(
 );
 
 const hasSupabaseServerEnv = Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY);
+
+function toOrigin(value: string): string | null {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return null;
+  }
+}
+
+const allowAllCorsOrigins = CORS_ALLOWED_ORIGINS.includes("*");
+const corsAllowedOrigins = new Set<string>();
+const appOrigin = toOrigin(APP_URL);
+
+if (appOrigin) {
+  corsAllowedOrigins.add(appOrigin);
+}
+
+for (const value of CORS_ALLOWED_ORIGINS) {
+  if (value === "*") continue;
+  const origin = toOrigin(value);
+  if (origin) {
+    corsAllowedOrigins.add(origin);
+  }
+}
+
+function isLocalhostOrigin(origin: string): boolean {
+  try {
+    const hostname = new URL(origin).hostname;
+    return hostname === "localhost" || hostname === "127.0.0.1";
+  } catch {
+    return false;
+  }
+}
+
+function isVercelPreviewOrigin(origin: string): boolean {
+  return /^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(origin);
+}
+
+function isAllowedCorsOrigin(origin: string): boolean {
+  if (allowAllCorsOrigins) return true;
+  if (corsAllowedOrigins.has(origin)) return true;
+  if (isLocalhostOrigin(origin)) return true;
+  if (ALLOW_VERCEL_PREVIEW_ORIGINS && isVercelPreviewOrigin(origin)) return true;
+  return false;
+}
 
 function getMissingCriticalEnvNames(): string[] {
   const missing: string[] = [];
@@ -2532,6 +2583,27 @@ app.post(
 
 // JSON body parser for non-webhook API routes.
 app.use(express.json({ limit: "5mb" }));
+
+// CORS for browser clients (Vercel frontend -> Render API).
+app.use((req, res, next) => {
+  const originHeader = req.headers.origin;
+  const requestOrigin = Array.isArray(originHeader) ? originHeader[0] : originHeader;
+
+  if (requestOrigin && isAllowedCorsOrigin(requestOrigin)) {
+    res.setHeader("Access-Control-Allow-Origin", requestOrigin);
+    res.setHeader("Vary", "Origin");
+  }
+
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization,X-Requested-With");
+  res.setHeader("Access-Control-Max-Age", "86400");
+
+  if (req.method === "OPTIONS") {
+    return res.status(204).end();
+  }
+
+  return next();
+});
 
 app.get("/api/v1/market/quotes", async (req, res) => {
   try {

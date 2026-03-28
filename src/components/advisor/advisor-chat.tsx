@@ -4,7 +4,7 @@ import { Brain, Sparkles } from "lucide-react";
 import { AdvisorInput } from "@/src/components/advisor/advisor-input";
 import { AdvisorMessage } from "@/src/components/advisor/advisor-message";
 import { AdvisorDisclaimer } from "@/src/components/advisor/advisor-disclaimer";
-import { apiUrl } from "@/src/lib/api/client";
+import { apiFetch } from "@/src/lib/api/client";
 import type {
   AdvisorErrorResponse,
   AdvisorMessage as AdvisorMessageType,
@@ -225,7 +225,7 @@ export function AdvisorChat({ compact = false, initialPrompt = null }: AdvisorCh
     try {
       setIsStreaming(true);
 
-      const response = await fetch(apiUrl("/api/v1/advisor/ask"), {
+      const response = await apiFetch("/api/v1/advisor/ask", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
