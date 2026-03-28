@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth, useUser } from "@clerk/react";
-import { useEffect, useState, useCallback, createContext, useContext, useRef } from "react";
+import { useEffect, useState, useCallback, createContext, useContext, useRef, useMemo } from "react";
 import { Sidebar } from "@/src/components/layout/sidebar";
 import { GlowBlobs } from "@/src/components/layout/glow-blobs";
 import { RightRail } from "@/src/components/layout/right-rail";
@@ -42,9 +42,9 @@ interface DashboardFxRates {
 
 const mobilePrimaryNav = [
   { to: "/dashboard", label: "Home", icon: LayoutDashboard, end: true, tour: "mobile-tab-home" },
-  { to: "/dashboard/holdings", label: "Holdings", icon: PieChart, tour: "mobile-tab-holdings" },
-  { to: "/dashboard/data", label: "Import", icon: FileText, tour: "mobile-tab-import" },
-  { to: "/dashboard/advisor", label: "Advisor", icon: Brain, tour: "mobile-tab-advisor" },
+  { to: "/dashboard/holdings", label: "Holdings", icon: PieChart, end: false, tour: "mobile-tab-holdings" },
+  { to: "/dashboard/data", label: "Import", icon: FileText, end: false, tour: "mobile-tab-import" },
+  { to: "/dashboard/advisor", label: "Advisor", icon: Brain, end: false, tour: "mobile-tab-advisor" },
 ] as const;
 
 const DESKTOP_GUIDED_TOUR_STEPS: GuidedTourStep[] = [
