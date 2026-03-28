@@ -19,6 +19,7 @@ import {
 dotenv.config({ path: ".env.local" });
 
 const app = express();
+const isVercelRuntime = process.env.VERCEL === "1";
 const PORT = process.env.WEBHOOK_PORT || 3001;
 
 const WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET;
@@ -2402,11 +2403,17 @@ async function generateAiImportSummary(holdings: ParsedImportHolding[]): Promise
   return payload.choices?.[0]?.message?.content?.trim() || null;
 }
 
-if (!WEBHOOK_SECRET || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   console.error(
-    "Missing required environment variables: CLERK_WEBHOOK_SECRET, VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY"
+    "Missing required environment variables: VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY"
   );
   process.exit(1);
+}
+
+if (!WEBHOOK_SECRET) {
+  console.warn(
+    "CLERK_WEBHOOK_SECRET is not configured. /api/webhooks/clerk will return 503 until it is set."
+  );
 }
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
@@ -2421,6 +2428,10 @@ app.post(
   "/api/webhooks/clerk",
   express.raw({ type: "application/json" }),
   async (req, res) => {
+    if (!WEBHOOK_SECRET) {
+      return res.status(503).send("CLERK_WEBHOOK_SECRET is not configured");
+    }
+
     const svix_id = req.headers["svix-id"] as string;
     const svix_timestamp = req.headers["svix-timestamp"] as string;
     const svix_signature = req.headers["svix-signature"] as string;
@@ -2430,7 +2441,7 @@ app.post(
     }
 
     const body = req.body.toString();
-    const wh = new Webhook(WEBHOOK_SECRET!);
+    const wh = new Webhook(WEBHOOK_SECRET);
 
     let evt: any;
     try {
@@ -5620,6 +5631,10 @@ app.get("/health", (_req, res) => {
   res.status(200).send("OK");
 });
 
+app.get("/api/health", (_req, res) => {
+  res.status(200).send("OK");
+});
+
 async function startServer() {
   try {
     const { error } = await supabase.from("profiles").select("id").limit(1);
@@ -5652,4 +5667,8 @@ async function startServer() {
   }
 }
 
-startServer();
+if (!isVercelRuntime) {
+  startServer();
+}
+
+export default app;
