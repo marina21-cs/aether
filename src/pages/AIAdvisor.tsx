@@ -1,7 +1,18 @@
+import { useMemo } from "react";
+import { useLocation } from "react-router-dom";
 import { Bot } from "lucide-react";
 import { AdvisorChat } from "@/src/components/advisor/advisor-chat";
 
 export function AIAdvisor() {
+  const location = useLocation();
+
+  const initialPrompt = useMemo(() => {
+    const prompt = new URLSearchParams(location.search).get("prompt");
+    if (!prompt) return null;
+    const trimmed = prompt.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }, [location.search]);
+
   return (
     <div className="mx-auto flex h-[calc(100vh-8.5rem)] max-w-6xl flex-col gap-4 animate-in fade-in duration-500">
       <header>
@@ -15,7 +26,7 @@ export function AIAdvisor() {
       </header>
 
       <div className="min-h-0 flex-1">
-        <AdvisorChat />
+        <AdvisorChat initialPrompt={initialPrompt} />
       </div>
     </div>
   );

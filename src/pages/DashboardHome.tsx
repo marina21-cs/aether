@@ -8,6 +8,7 @@ import {
   ContextualLiteracyPanel,
   GlossaryTerm,
 } from "@/feature/phase_1_contextual_literacy";
+import { ActionableInsightsPanel } from "@/feature/phase_3_actionable_insights";
 
 const TYPE_COLORS: Record<Holding["type"], string> = {
   "PH Stocks": "#6EE7B7",
@@ -128,6 +129,11 @@ export default function DashboardPage() {
     return [...rows].sort((a, b) => b.pnlPercent - a.pnlPercent)[0];
   }, [rows]);
 
+  const worstPerformer = useMemo(() => {
+    if (rows.length === 0) return null;
+    return [...rows].sort((a, b) => a.pnlPercent - b.pnlPercent)[0];
+  }, [rows]);
+
   const totalPortfolioValue = useMemo(() => getTotalPortfolio(), [getTotalPortfolio]);
 
   const liveCoveragePct = useMemo(() => {
@@ -139,6 +145,16 @@ export default function DashboardPage() {
     if (allocation.length === 0) return 0;
     return allocation.reduce((maxPercent, bucket) => Math.max(maxPercent, bucket.percent), 0);
   }, [allocation]);
+
+  const cashAllocationPct = useMemo(
+    () => allocation.find((bucket) => bucket.type === "Cash")?.percent ?? 0,
+    [allocation]
+  );
+
+  const hasCryptoExposure = useMemo(
+    () => rows.some((row) => row.type === "Crypto" && row.marketValue > 0),
+    [rows]
+  );
 
   const inflationDragEstimate = useMemo(
     () => totalPortfolioValue * 0.042,
@@ -171,6 +187,21 @@ export default function DashboardPage() {
         metricLabel="Estimated yearly inflation drag"
         metricValue={formatDisplay(inflationDragEstimate)}
         metricExplanation="If your portfolio grows slower than inflation, this is the rough buying-power loss over one year."
+      />
+
+      <ActionableInsightsPanel
+        signals={{
+          totalPortfolioValue,
+          holdingsCount: rows.length,
+          topAllocationPct,
+          cashAllocationPct,
+          liveCoveragePct,
+          manualPricedCount,
+          dailyPnl: totalPnl,
+          bestPerformerPct: bestPerformer?.pnlPercent,
+          worstPerformerPct: worstPerformer?.pnlPercent,
+          hasCryptoExposure,
+        }}
       />
 
       <section className="glass-panel card-fade-in rounded-[16px] p-5" style={{ animationDelay: "40ms" }}>

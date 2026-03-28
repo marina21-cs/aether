@@ -14,6 +14,7 @@ import type {
 
 interface AdvisorChatProps {
   compact?: boolean;
+  initialPrompt?: string | null;
 }
 
 function makeId() {
@@ -74,7 +75,7 @@ function extractErrorMessage(rawError: unknown): string {
   return "Advisor is temporarily unavailable. Please try again.";
 }
 
-export function AdvisorChat({ compact = false }: AdvisorChatProps) {
+export function AdvisorChat({ compact = false, initialPrompt = null }: AdvisorChatProps) {
   const { user } = useUser();
   const [messages, setMessages] = useState<AdvisorMessageType[]>([INITIAL_ASSISTANT_MESSAGE]);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -87,6 +88,7 @@ export function AdvisorChat({ compact = false }: AdvisorChatProps) {
   const typingQueueRef = useRef("");
   const renderedContentRef = useRef("");
   const typingMessageIdRef = useRef<string | null>(null);
+  const handledAutoPromptRef = useRef<string | null>(null);
 
   const canAsk = Boolean(user?.id) && !isStreaming;
 
@@ -307,6 +309,18 @@ export function AdvisorChat({ compact = false }: AdvisorChatProps) {
       abortRef.current = null;
     }
   };
+
+  useEffect(() => {
+    const prompt = initialPrompt?.trim();
+    if (!prompt || !user?.id || isStreaming) return;
+
+    if (handledAutoPromptRef.current === prompt) {
+      return;
+    }
+
+    handledAutoPromptRef.current = prompt;
+    void sendMessage(prompt);
+  }, [initialPrompt, user?.id, isStreaming]);
 
   return (
     <section className="flex h-full flex-col rounded-[16px] border border-glass-border bg-bg-surface backdrop-blur-[12px]">
