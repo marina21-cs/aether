@@ -357,6 +357,14 @@ export default function DashboardLayout() {
   const lastHydratedUserIdRef = useRef<string | null>(null);
   const completedHydrationUserIdRef = useRef<string | null>(null);
   const guidedTourStorageKey = user?.id ? `aether:dashboard-tour-seen:${user.id}` : null;
+  const isLikelyNewUser = useMemo(() => {
+    if (!user?.createdAt) return false;
+    const createdAtMs = Number(user.createdAt);
+    if (!Number.isFinite(createdAtMs)) return false;
+
+    // Treat only recently-created accounts as auto-tour candidates.
+    return Date.now() - createdAtMs < 1000 * 60 * 60 * 24 * 7;
+  }, [user?.createdAt]);
 
   const {
     usdToPhp,
@@ -512,17 +520,32 @@ export default function DashboardLayout() {
 
   const markGuidedTourSeen = useCallback(() => {
     if (!guidedTourStorageKey) return;
-    window.localStorage.setItem(guidedTourStorageKey, "1");
+    try {
+      window.localStorage.setItem(guidedTourStorageKey, "1");
+    } catch {
+      // Ignore storage failures (private mode / blocked storage).
+    }
   }, [guidedTourStorageKey]);
 
   useEffect(() => {
     if (!isLoaded || !user?.id || !guidedTourStorageKey) return;
 
-    const alreadySeen = window.localStorage.getItem(guidedTourStorageKey) === "1";
-    if (!alreadySeen) {
-      startGuidedTour();
+    let alreadySeen = true;
+    try {
+      alreadySeen = window.localStorage.getItem(guidedTourStorageKey) === "1";
+    } catch {
+      alreadySeen = true;
     }
-  }, [guidedTourStorageKey, isLoaded, startGuidedTour, user?.id]);
+
+    if (!alreadySeen) {
+      if (isLikelyNewUser) {
+        startGuidedTour();
+      } else {
+        // Existing users should opt in from Settings.
+        markGuidedTourSeen();
+      }
+    }
+  }, [guidedTourStorageKey, isLikelyNewUser, isLoaded, markGuidedTourSeen, startGuidedTour, user?.id]);
 
   const guidedTourSteps = useMemo(
     () => (isMobileViewport ? MOBILE_GUIDED_TOUR_STEPS : DESKTOP_GUIDED_TOUR_STEPS),

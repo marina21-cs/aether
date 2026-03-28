@@ -109,6 +109,19 @@ export function GuidedTour({ open, steps, onClose, onFinish }: GuidedTourProps) 
     }
   }, [open, activeStep?.id, targetRect]);
 
+  useEffect(() => {
+    if (!open) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, onClose]);
+
   const tooltipPosition = useMemo(() => {
     if (typeof window === "undefined") {
       return { top: 24, left: 24 };
@@ -167,31 +180,40 @@ export function GuidedTour({ open, steps, onClose, onFinish }: GuidedTourProps) 
 
   return (
     <div className="fixed inset-0 z-[120]">
-      <button
-        type="button"
-        onClick={onClose}
-        aria-label="Close tutorial"
-        className="fixed inset-0 cursor-default bg-transparent"
-      />
-
       {targetRect ? (
         <div
-          className="pointer-events-none fixed rounded-2xl border border-accent-primary/80 transition-all duration-200"
+          className="pointer-events-none fixed z-[122] rounded-2xl border border-accent-primary/80 transition-all duration-200"
           style={{
             top: targetRect.top - 6,
             left: targetRect.left - 6,
             width: targetRect.width + 12,
             height: targetRect.height + 12,
-            boxShadow: "0 0 0 9999px rgba(4, 6, 12, 0.72)",
+            boxShadow: "0 0 0 9999px rgba(4, 6, 12, 0.54)",
           }}
         />
       ) : (
-        <div className="fixed inset-0 bg-[rgba(4,6,12,0.72)]" />
+        <div className="pointer-events-none fixed inset-0 z-[120] bg-[rgba(4,6,12,0.54)]" />
       )}
+
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="Close tutorial"
+        className="fixed inset-0 z-[121] cursor-default bg-transparent"
+      />
+
+      <button
+        type="button"
+        onClick={onClose}
+        className="motion-tap fixed right-4 top-4 z-[124] inline-flex h-10 items-center rounded-lg border border-glass-border bg-bg-surface px-3 text-xs font-semibold text-text-primary"
+        aria-label="Skip tutorial"
+      >
+        Skip Tour
+      </button>
 
       <div
         ref={tooltipRef}
-        className="fixed w-[min(360px,calc(100vw-32px))] rounded-2xl border border-glass-border bg-bg-surface/95 p-4 shadow-[0_16px_50px_rgba(0,0,0,0.45)] backdrop-blur-xl"
+        className="fixed z-[123] w-[min(360px,calc(100vw-32px))] rounded-2xl border border-glass-border bg-bg-surface/95 p-4 shadow-[0_16px_50px_rgba(0,0,0,0.45)] backdrop-blur-xl"
         style={{
           top: tooltipPosition.top,
           left: tooltipPosition.left,

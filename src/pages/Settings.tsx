@@ -151,7 +151,7 @@ export function Settings() {
           >
             <p className="text-xs uppercase tracking-[0.08em] text-accent-secondary">Tutorial Mode</p>
             <p className="mt-1 text-xs text-text-secondary">
-              Re-run the guided tour anytime to review navigation and core controls.
+              Returning users can re-run the guided tour anytime to review navigation and core controls.
             </p>
             <button
               type="button"
