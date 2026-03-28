@@ -355,6 +355,7 @@ export default function DashboardLayout() {
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [guidedTourOpen, setGuidedTourOpen] = useState(false);
+  const attemptedAutoTourRef = useRef(false);
   const lastHydratedUserIdRef = useRef<string | null>(null);
   const completedHydrationUserIdRef = useRef<string | null>(null);
   const guidedTourStorageKey = user?.id ? `aether:dashboard-tour-seen:${user.id}` : null;
@@ -534,10 +535,12 @@ export default function DashboardLayout() {
 
   useEffect(() => {
     if (!isLoaded || !user?.id || !guidedTourStorageKey) return;
+    if (attemptedAutoTourRef.current) return;
 
     if (disableTourByQuery) {
       setGuidedTourOpen(false);
       markGuidedTourSeen();
+      attemptedAutoTourRef.current = true;
       return;
     }
 
@@ -556,6 +559,8 @@ export default function DashboardLayout() {
         markGuidedTourSeen();
       }
     }
+
+    attemptedAutoTourRef.current = true;
   }, [disableTourByQuery, guidedTourStorageKey, isLikelyNewUser, isLoaded, markGuidedTourSeen, startGuidedTour, user?.id]);
 
   const guidedTourSteps = useMemo(
@@ -664,7 +669,7 @@ export default function DashboardLayout() {
     startGuidedTour,
   };
 
-  if (!isLoaded || checkingOnboarding) {
+  if (!isLoaded) {
     return (
       <div
         className="flex min-h-screen items-center justify-center"
@@ -745,6 +750,11 @@ export default function DashboardLayout() {
               <div className="hidden lg:block">
                 <PHClock />
               </div>
+              {checkingOnboarding && (
+                <span className="hidden rounded-full border border-glass-border bg-bg-surface px-2 py-1 text-[10px] text-text-muted lg:inline">
+                  Syncing data...
+                </span>
+              )}
               <button
                 type="button"
                 onClick={() => setAdvisorOpen(true)}
