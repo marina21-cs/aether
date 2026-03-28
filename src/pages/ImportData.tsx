@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useUser } from "@clerk/react";
 import {
+  AlertTriangle,
   FileSpreadsheet,
   FileUp,
   Plus,
@@ -1040,26 +1041,38 @@ export function ImportData() {
   }, [autoHydratedUserId, busy, holdings.length, hydrateFromSupabase, user?.id]);
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 animate-in fade-in duration-500">
-      <div className="flex flex-col gap-1">
+    <div className="mx-auto max-w-5xl animate-in space-y-5 px-1 pb-2 fade-in duration-500 sm:space-y-6 sm:px-0">
+      <div className="flex flex-col gap-2">
         <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-glass-border bg-accent-subtle px-3.5 py-1 font-body text-xs font-medium uppercase tracking-[0.1em] text-accent-glow">
           Data Ingestion
         </span>
-        <h1 className="font-display text-3xl font-bold text-text-primary">CSV Holdings + Tangible Assets</h1>
+        <h1 className="font-display text-2xl font-bold text-text-primary sm:text-3xl">CSV Holdings + Tangible Assets</h1>
         <p className="text-sm text-text-secondary">
-          Upload broker or bank CSV data, let AI normalize it, and auto-sync to Dashboard + Holdings.
+          Upload broker or bank export files (CSV), let AI normalize them, and auto-sync to Dashboard + Holdings.
         </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <section className="glass-panel rounded-2xl border border-glass-border p-6 lg:col-span-2">
-          <h2 className="mb-4 flex items-center font-display text-lg font-bold text-text-primary">
+      <div className="rounded-xl border border-accent-warning/40 bg-accent-warning/10 p-4 text-sm text-text-secondary">
+        <p className="inline-flex items-center font-semibold text-accent-warning">
+          <AlertTriangle className="mr-1.5 h-4 w-4" /> MVP Import Mode: CSV/File Upload
+        </p>
+        <p className="mt-1 text-xs leading-relaxed text-text-secondary sm:text-sm">
+          For this MVP, CSV/file upload is our secure alternative to direct bank authorization and account linking. Think of it as a bank-authorized handoff: you export from your bank or broker, upload here, review what is parsed, then confirm before saving.
+        </p>
+        <p className="mt-1 text-xs text-text-muted">
+          Planned next phase: direct connections to bank accounts, trading accounts, and more providers.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3 lg:gap-6">
+        <section className="glass-panel rounded-2xl border border-glass-border p-4 sm:p-6 lg:col-span-2">
+          <h2 className="mb-4 flex items-center font-display text-base font-bold text-text-primary sm:text-lg">
             <Upload className="mr-2 h-5 w-5 text-accent-primary" />
             CSV + AI Import Pipeline
           </h2>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-glass-border bg-bg-surface px-4 py-3 text-sm text-text-primary hover:bg-white/5">
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 sm:gap-3 xl:grid-cols-3">
+            <label className="flex min-h-[44px] w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-glass-border bg-bg-surface px-4 py-3 text-sm text-text-primary hover:bg-white/5">
               <FileSpreadsheet className="h-4 w-4" /> Upload CSV
               <input type="file" accept=".csv" className="hidden" onChange={onCsvUpload} />
             </label>
@@ -1085,7 +1098,7 @@ export function ImportData() {
                   type="button"
                   disabled={busy || downloadingMock}
                   onClick={() => void onDownloadSelectedMock()}
-                  className="inline-flex h-9 shrink-0 items-center justify-center gap-1 rounded-md border border-glass-border bg-bg-dark px-2.5 text-xs text-text-primary hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex h-9 min-h-[36px] shrink-0 items-center justify-center gap-1 rounded-md border border-glass-border bg-bg-dark px-2.5 text-xs text-text-primary hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <Download className="h-3.5 w-3.5" /> {downloadingMock ? "Downloading..." : "Download"}
                 </button>
@@ -1099,7 +1112,7 @@ export function ImportData() {
               type="button"
               disabled={busy}
               onClick={onLoadFromSupabase}
-              className="rounded-xl border border-glass-border bg-bg-surface px-4 py-3 text-sm text-text-primary hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60"
+              className="w-full rounded-xl border border-glass-border bg-bg-surface px-4 py-3 text-sm text-text-primary hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60"
             >
               Load From Supabase
             </button>
@@ -1205,12 +1218,12 @@ export function ImportData() {
                 </table>
               </div>
 
-              <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
+              <div className="mt-3 flex flex-wrap items-center justify-stretch gap-2 sm:justify-end">
                 <button
                   type="button"
                   disabled={busy}
                   onClick={onDiscardPendingImport}
-                  className="rounded-lg border border-glass-border bg-bg-dark px-3 py-2 text-xs text-text-secondary disabled:cursor-not-allowed disabled:opacity-60"
+                  className="w-full rounded-lg border border-glass-border bg-bg-dark px-3 py-2 text-xs text-text-secondary disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                 >
                   Discard
                 </button>
@@ -1218,7 +1231,7 @@ export function ImportData() {
                   type="button"
                   disabled={busy}
                   onClick={onConfirmPendingImport}
-                  className="rounded-lg bg-accent-secondary px-3 py-2 text-xs font-semibold text-white hover:bg-accent-secondary/90 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="w-full rounded-lg bg-accent-secondary px-3 py-2 text-xs font-semibold text-white hover:bg-accent-secondary/90 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                 >
                   Confirm Add + Save to Supabase
                 </button>
@@ -1231,7 +1244,7 @@ export function ImportData() {
               type="button"
               disabled={busy || holdings.length === 0}
               onClick={onSaveToSupabase}
-              className="inline-flex items-center gap-2 rounded-xl bg-accent-primary px-4 py-2.5 text-sm font-semibold text-[#09090B] hover:bg-accent-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent-primary px-4 py-2.5 text-sm font-semibold text-[#09090B] hover:bg-accent-primary/90 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
             >
               <Save className="h-4 w-4" /> Save Holdings To Supabase
             </button>
@@ -1486,7 +1499,7 @@ export function ImportData() {
           )}
 
           <div className="mt-4 rounded-xl border border-glass-border bg-bg-surface p-4">
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-sm font-semibold text-text-primary">Imported Holdings Preview</h3>
               <span className="text-xs text-text-muted">
                 Showing {Math.min(holdings.length, 8)} of {holdings.length}
@@ -1526,7 +1539,7 @@ export function ImportData() {
           </div>
         </section>
 
-        <section className="glass-panel rounded-2xl border border-glass-border p-6">
+        <section className="glass-panel rounded-2xl border border-glass-border p-4 sm:p-6">
           <h2 className="mb-4 font-display text-lg font-bold text-text-primary">Portfolio Snapshot</h2>
           <div className="space-y-3 text-sm text-text-secondary">
             <div className="flex justify-between">

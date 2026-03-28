@@ -10,7 +10,7 @@ import { useExchangeRate } from "@/src/hooks/use-exchange-rate";
 import { useCryptoPrices } from "@/src/hooks/use-crypto-prices";
 import { apiFetch } from "@/src/lib/api/client";
 import type { Asset } from "@/src/types/database";
-import { MessageSquare } from "lucide-react";
+import { Menu, MessageSquare } from "lucide-react";
 import { CurrencySwitcher } from "@/src/components/currency/currency-switcher";
 import {
   convertFromNativeToDisplay,
@@ -210,6 +210,8 @@ export default function DashboardLayout() {
   const [displayCurrency, setDisplayCurrency] = useState<DisplayCurrency>("PHP");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [advisorOpen, setAdvisorOpen] = useState(false);
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const lastHydratedUserIdRef = useRef<string | null>(null);
   const completedHydrationUserIdRef = useRef<string | null>(null);
 
@@ -337,6 +339,28 @@ export default function DashboardLayout() {
     };
   }, [user, isLoaded, getToken]);
 
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-width: 1023px)");
+
+    const syncViewportMode = () => {
+      const isMobile = mediaQuery.matches;
+      setIsMobileViewport(isMobile);
+      if (!isMobile) {
+        setMobileSidebarOpen(false);
+      }
+    };
+
+    syncViewportMode();
+
+    if (typeof mediaQuery.addEventListener === "function") {
+      mediaQuery.addEventListener("change", syncViewportMode);
+      return () => mediaQuery.removeEventListener("change", syncViewportMode);
+    }
+
+    mediaQuery.addListener(syncViewportMode);
+    return () => mediaQuery.removeListener(syncViewportMode);
+  }, []);
+
   // ─── Conversion helpers ────────────────────
 
   const toDisplay = useCallback(
@@ -448,36 +472,60 @@ export default function DashboardLayout() {
     );
   }
 
-  const sidebarWidth = sidebarCollapsed ? 72 : 240;
+  const sidebarWidth = isMobileViewport ? 0 : sidebarCollapsed ? 72 : 240;
 
   return (
     <DashboardContext.Provider value={contextValue}>
       <div className="relative min-h-screen" style={{ backgroundColor: "#09090B" }}>
         <GlowBlobs />
+        {isMobileViewport && mobileSidebarOpen && (
+          <button
+            type="button"
+            className="fixed inset-0 z-30 bg-black/40"
+            aria-label="Close navigation overlay"
+            onClick={() => setMobileSidebarOpen(false)}
+          />
+        )}
         <Sidebar
           fxRate={usdToPhp}
           fxStatus={fxStatus === "loading" ? "fresh" : fxStatus}
           collapsed={sidebarCollapsed}
           onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+          isMobile={isMobileViewport}
+          mobileOpen={mobileSidebarOpen}
+          onRequestCloseMobile={() => setMobileSidebarOpen(false)}
         />
         <main
           className="min-h-screen transition-all duration-300"
-          style={{ marginLeft: sidebarWidth, padding: "0 24px 24px 24px" }}
+          style={{
+            marginLeft: sidebarWidth,
+            padding: isMobileViewport ? "0 14px 18px 14px" : "0 24px 24px 24px",
+          }}
         >
           {/* Top Bar */}
           <div
-            className="sticky top-0 z-30 flex items-center justify-between py-4"
+            className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-3 py-3 sm:py-4"
             style={{
               backgroundColor: "rgba(9,9,11,0.85)",
               backdropFilter: "blur(12px)",
             }}
           >
             {/* Left: Portfolio total */}
-            <div className="flex items-center gap-4">
+            <div className="flex min-w-0 items-center gap-2 sm:gap-4">
+              {isMobileViewport && (
+                <button
+                  type="button"
+                  onClick={() => setMobileSidebarOpen(true)}
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-glass-border bg-bg-surface text-text-primary transition-colors hover:border-border-accent hover:bg-white/5"
+                  aria-label="Open navigation"
+                >
+                  <Menu size={16} aria-hidden="true" />
+                </button>
+              )}
               <div>
-                <p className="text-xs text-text-muted font-medium">Total Portfolio</p>
+                <p className="text-xs font-medium text-text-muted">Total Portfolio</p>
                 <p
-                  className="text-xl font-bold text-text-primary currency-fade tabular-nums"
+                  className="currency-fade tabular-nums text-base font-bold text-text-primary sm:text-xl"
                   style={{ fontFamily: "JetBrains Mono, monospace" }}
                 >
                   {formatDisplay(getTotalPortfolio())}
@@ -486,16 +534,18 @@ export default function DashboardLayout() {
             </div>
 
             {/* Right: clock + toggle + avatar */}
-            <div className="flex items-center gap-4">
-              <PHClock />
+            <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-end sm:gap-4">
+              <div className="hidden lg:block">
+                <PHClock />
+              </div>
               <button
                 type="button"
                 onClick={() => setAdvisorOpen(true)}
-                className="inline-flex h-9 items-center gap-2 rounded-full border border-glass-border bg-bg-surface px-3 text-xs font-medium text-text-primary transition-colors hover:border-border-accent hover:bg-white/5"
+                className="inline-flex h-9 items-center gap-2 rounded-full border border-glass-border bg-bg-surface px-2.5 text-xs font-medium text-text-primary transition-colors hover:border-border-accent hover:bg-white/5 sm:px-3"
                 aria-label="Open AI Advisor"
               >
                 <MessageSquare size={14} className="text-accent-primary" aria-hidden="true" />
-                AI Chat
+                <span className="hidden sm:inline">AI Chat</span>
               </button>
               <CurrencySwitcher value={displayCurrency} onChange={setDisplayCurrency} />
               <UserButton

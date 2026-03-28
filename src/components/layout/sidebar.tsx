@@ -14,6 +14,7 @@ import {
   Bell,
   ChevronLeft,
   ChevronRight,
+  X,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 
@@ -42,11 +43,13 @@ function NavSection({
   items,
   pathname,
   collapsed,
+  onNavigate,
 }: {
   label: string;
   items: typeof mainNav;
   pathname: string;
   collapsed: boolean;
+  onNavigate?: () => void;
 }) {
   return (
     <div className="flex flex-col gap-1">
@@ -62,6 +65,7 @@ function NavSection({
             key={item.href}
             to={item.href}
             title={collapsed ? item.label : undefined}
+            onClick={onNavigate}
             className={cn(
               "flex items-center gap-2.5 rounded-[8px] px-3 font-body text-sm transition-all duration-200",
               collapsed ? "h-10 justify-center" : "h-10",
@@ -91,17 +95,30 @@ interface SidebarProps {
   fxStatus?: "fresh" | "stale";
   collapsed: boolean;
   onToggleCollapse: () => void;
+  isMobile?: boolean;
+  mobileOpen?: boolean;
+  onRequestCloseMobile?: () => void;
 }
 
-export function Sidebar({ fxRate, fxStatus = "fresh", collapsed, onToggleCollapse }: SidebarProps) {
+export function Sidebar({
+  fxRate,
+  fxStatus = "fresh",
+  collapsed,
+  onToggleCollapse,
+  isMobile = false,
+  mobileOpen = false,
+  onRequestCloseMobile,
+}: SidebarProps) {
   const location = useLocation();
   const pathname = location.pathname;
+  const effectiveCollapsed = isMobile ? false : collapsed;
 
   return (
     <aside
       className={cn(
         "fixed left-0 top-0 z-40 flex h-screen flex-col border-r transition-all duration-300",
-        collapsed ? "w-[72px]" : "w-[240px]"
+        effectiveCollapsed ? "w-[72px]" : "w-[240px]",
+        isMobile ? (mobileOpen ? "translate-x-0" : "-translate-x-full") : "translate-x-0"
       )}
       style={{
         backgroundColor: "#111113",
@@ -132,7 +149,7 @@ export function Sidebar({ fxRate, fxStatus = "fresh", collapsed, onToggleCollaps
             />
             <line x1="10.5" y1="16" x2="17.5" y2="16" stroke="#6EE7B7" strokeWidth="1.5" />
           </svg>
-          {!collapsed && (
+          {!effectiveCollapsed && (
             <span
               className="text-[1.1rem] font-bold tracking-[0.12em]"
               style={{ fontFamily: "TT Bakers, serif", color: "#F4F4F5" }}
@@ -141,20 +158,50 @@ export function Sidebar({ fxRate, fxStatus = "fresh", collapsed, onToggleCollaps
             </span>
           )}
         </NavLink>
-        <button
-          onClick={onToggleCollapse}
-          className="flex h-7 w-7 items-center justify-center rounded-md text-text-muted hover:bg-[rgba(255,255,255,0.05)] hover:text-text-primary transition-colors"
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-        >
-          {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
-        </button>
+        {isMobile ? (
+          <button
+            type="button"
+            onClick={onRequestCloseMobile}
+            className="flex h-7 w-7 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-[rgba(255,255,255,0.05)] hover:text-text-primary"
+            aria-label="Close navigation"
+          >
+            <X size={14} />
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onToggleCollapse}
+            className="flex h-7 w-7 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-[rgba(255,255,255,0.05)] hover:text-text-primary"
+            aria-label={effectiveCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            {effectiveCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+          </button>
+        )}
       </div>
 
       {/* Navigation */}
       <nav className="flex flex-1 flex-col gap-6 overflow-y-auto px-3 py-4">
-        <NavSection label="Main" items={mainNav} pathname={pathname} collapsed={collapsed} />
-        <NavSection label="Analysis" items={analysisNav} pathname={pathname} collapsed={collapsed} />
-        <NavSection label="Account" items={settingsNav} pathname={pathname} collapsed={collapsed} />
+        <NavSection
+          label="Main"
+          items={mainNav}
+          pathname={pathname}
+          collapsed={effectiveCollapsed}
+          onNavigate={onRequestCloseMobile}
+        />
+        <NavSection
+          label="Analysis"
+          items={analysisNav}
+          pathname={pathname}
+          collapsed={effectiveCollapsed}
+          onNavigate={onRequestCloseMobile}
+        />
+        <NavSection
+          label="Account"
+          items={settingsNav}
+          pathname={pathname}
+          collapsed={effectiveCollapsed}
+          onNavigate={onRequestCloseMobile}
+        />
       </nav>
 
       {/* FX Rate (bottom) */}
@@ -162,7 +209,7 @@ export function Sidebar({ fxRate, fxStatus = "fresh", collapsed, onToggleCollaps
         className="border-t px-4 py-3"
         style={{ borderColor: "rgba(255,255,255,0.07)" }}
       >
-        {!collapsed ? (
+        {!effectiveCollapsed ? (
           <div className="flex items-center gap-2">
             <span
               className={cn(
