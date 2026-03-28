@@ -1,0 +1,4 @@
+instrument,stock_code,asset_type,holding_quantity,cost_basis,current_value,currency
+PLDT Inc,TEL,PH Equity,12,1298.45,15581.40,PHP
+Nvidia Corp,NVDA,US Equity,3,875.00,2790.00,USD
+US Dollar Cash,USD_CASH,Cash,1,1200.00,1200.00,USD

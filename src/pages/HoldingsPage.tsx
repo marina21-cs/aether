@@ -4,6 +4,10 @@ import { Database, LineChart, Plus, Upload } from "lucide-react";
 import { useDashboard } from "./DashboardLayout";
 import { HoldingsTable } from "@/src/components/holdings/holdings-table";
 import { AddAssetDialog } from "@/src/components/holdings/add-asset-dialog";
+import {
+  ContextualLiteracyPanel,
+  GlossaryTerm,
+} from "@/feature/phase_1_contextual_literacy";
 
 export default function HoldingsPage() {
   const { holdings, getMarketValue, formatDisplay, cryptoPrices } = useDashboard();
@@ -23,6 +27,28 @@ export default function HoldingsPage() {
     [holdings, cryptoPrices]
   );
 
+  const pricedCoveragePct = useMemo(() => {
+    if (holdings.length === 0) return 0;
+
+    const pricedCount = holdings.filter(
+      (holding) =>
+        holding.type !== "Crypto" || typeof cryptoPrices[holding.ticker] === "number"
+    ).length;
+
+    return (pricedCount / holdings.length) * 100;
+  }, [holdings, cryptoPrices]);
+
+  const topHoldingConcentrationPct = useMemo(() => {
+    if (totalValue <= 0) return 0;
+
+    const largestHoldingValue = holdings.reduce(
+      (largest, holding) => Math.max(largest, getMarketValue(holding)),
+      0
+    );
+
+    return (largestHoldingValue / totalValue) * 100;
+  }, [holdings, totalValue, getMarketValue]);
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
@@ -31,9 +57,24 @@ export default function HoldingsPage() {
         </span>
         <h1 className="font-display text-[2.25rem] font-bold text-text-primary">Positions</h1>
         <p className="font-body text-sm text-text-muted">
-          Detailed positions with sortable market value and P&L columns.
+          Detailed positions with sortable market value and P&L columns. Learn{" "}
+          <GlossaryTerm term="cost basis" /> and improve{" "}
+          <GlossaryTerm term="diversification" /> as you scale.
         </p>
       </div>
+
+      <ContextualLiteracyPanel
+        context="assets"
+        signals={{
+          totalPortfolioValue: totalValue,
+          holdingsCount: holdings.length,
+          liveCoveragePct: pricedCoveragePct,
+          topAllocationPct: topHoldingConcentrationPct,
+        }}
+        metricLabel="Largest holding concentration"
+        metricValue={`${topHoldingConcentrationPct.toFixed(1)}%`}
+        metricExplanation="Keeping one position from becoming too dominant can reduce single-asset downside risk."
+      />
 
       <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <div className="glass-panel rounded-[14px] p-4">

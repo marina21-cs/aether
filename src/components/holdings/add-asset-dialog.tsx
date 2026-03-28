@@ -1,6 +1,8 @@
 import { useState } from "react";
+import { useUser } from "@clerk/react";
 import { Plus, X } from "lucide-react";
 import { useDashboard, type Holding } from "@/src/pages/DashboardLayout";
+import { apiUrl } from "@/src/lib/api/client";
 
 interface AddAssetDialogProps {
 	open: boolean;
@@ -46,10 +48,50 @@ const INITIAL_DRAFT: DraftState = {
 	useLivePriceForCrypto: true,
 };
 
+async function parseApiPayload(response: Response): Promise<unknown> {
+	const raw = await response.text();
+	if (!raw.trim()) return null;
+
+	try {
+		return JSON.parse(raw);
+	} catch {
+		return raw;
+	}
+}
+
+function extractApiErrorMessage(payload: unknown, fallback: string): string {
+	if (payload && typeof payload === "object" && "error" in payload) {
+		const message = (payload as { error?: { message?: string } }).error?.message;
+		if (typeof message === "string" && message.trim().length > 0) {
+			return message;
+		}
+	}
+
+	if (typeof payload === "string" && payload.trim().length > 0) {
+		return payload.slice(0, 240);
+	}
+
+	return fallback;
+}
+
+function toErrorMessage(error: unknown, fallback: string): string {
+	if (error instanceof Error && error.message.trim().length > 0) {
+		return error.message;
+	}
+
+	if (typeof error === "string" && error.trim().length > 0) {
+		return error;
+	}
+
+	return fallback;
+}
+
 export function AddAssetDialog({ open, onClose }: AddAssetDialogProps) {
-	const { setHoldings } = useDashboard();
+	const { user } = useUser();
+	const { holdings, setHoldings, usdToPhp } = useDashboard();
 	const [draft, setDraft] = useState<DraftState>(INITIAL_DRAFT);
 	const [error, setError] = useState<string | null>(null);
+	const [isSaving, setIsSaving] = useState(false);
 
 	if (!open) return null;
 
@@ -59,7 +101,33 @@ export function AddAssetDialog({ open, onClose }: AddAssetDialogProps) {
 		onClose();
 	};
 
-	const onAdd = () => {
+	const persistHoldings = async (nextHoldings: Holding[]) => {
+		if (!user) return;
+
+		const response = await fetch(apiUrl("/api/v1/data/save-assets"), {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				userId: user.id,
+				email: user.primaryEmailAddress?.emailAddress ?? null,
+				fullName: user.fullName ?? null,
+				holdings: nextHoldings,
+				tangibleMetaByKey: {},
+				usdToPhp,
+				contextLabel: "holdings_add_dialog",
+			}),
+		});
+
+		const payload = await parseApiPayload(response);
+		if (!response.ok) {
+			throw new Error(extractApiErrorMessage(payload, "Failed to save asset."));
+		}
+	};
+
+	const onAdd = async () => {
+		if (isSaving) return;
+		setError(null);
+
 		const name = draft.name.trim();
 		const ticker = (draft.ticker.trim() || inferTicker(name)).toUpperCase();
 		const qty = Number(draft.qty);
@@ -106,8 +174,18 @@ export function AddAssetDialog({ open, onClose }: AddAssetDialogProps) {
 			manualPrice: resolvedManualPrice,
 		};
 
-		setHoldings((prev) => [...prev, newHolding]);
-		closeAndReset();
+		const nextHoldings = [...holdings, newHolding];
+
+		try {
+			setIsSaving(true);
+			await persistHoldings(nextHoldings);
+			setHoldings(nextHoldings);
+			closeAndReset();
+		} catch (saveError) {
+			setError(toErrorMessage(saveError, "Failed to save this asset to your account."));
+		} finally {
+			setIsSaving(false);
+		}
 	};
 
 	return (
@@ -118,6 +196,7 @@ export function AddAssetDialog({ open, onClose }: AddAssetDialogProps) {
 					<button
 						type="button"
 						onClick={closeAndReset}
+						disabled={isSaving}
 						className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-glass-border text-text-muted hover:bg-white/5"
 						aria-label="Close add asset dialog"
 					>
@@ -231,16 +310,24 @@ export function AddAssetDialog({ open, onClose }: AddAssetDialogProps) {
 					<button
 						type="button"
 						onClick={closeAndReset}
-						className="rounded-lg border border-glass-border bg-bg-dark px-3 py-2 text-xs text-text-secondary"
+						disabled={isSaving}
+						className="rounded-lg border border-glass-border bg-bg-dark px-3 py-2 text-xs text-text-secondary disabled:cursor-not-allowed disabled:opacity-60"
 					>
 						Cancel
 					</button>
 					<button
 						type="button"
 						onClick={onAdd}
-						className="inline-flex items-center gap-1 rounded-lg bg-accent-primary px-3 py-2 text-xs font-semibold text-[#09090B] hover:bg-accent-primary/90"
+						disabled={isSaving}
+						className="inline-flex items-center gap-1 rounded-lg bg-accent-primary px-3 py-2 text-xs font-semibold text-[#09090B] hover:bg-accent-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
 					>
-						<Plus className="h-3.5 w-3.5" /> Add Asset
+						{isSaving ? (
+							"Saving..."
+						) : (
+							<>
+								<Plus className="h-3.5 w-3.5" /> Add Asset
+							</>
+						)}
 					</button>
 				</div>
 			</div>

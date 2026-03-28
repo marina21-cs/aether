@@ -1,0 +1,3 @@
+name,ticker,type,qty,avg_cost,manual_price,currency
+Family Sedan,SEDAN2020,Tangible Assets,1,780000,760000,PHP
+Gold Collection,GOLDCOLL,Tangible Assets,1,250000,268000,PHP

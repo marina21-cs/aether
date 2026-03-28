@@ -14,6 +14,7 @@
   "dependencies": {
     "@clerk/react": "^6.1.0",
     "@google/genai": "^1.29.0",
+    "@react-email/components": "^1.0.10",
     "@supabase/supabase-js": "^2.99.1",
     "@tailwindcss/vite": "^4.1.14",
     "@tanstack/react-table": "^8.21.3",
@@ -29,11 +30,14 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-dropzone": "^15.0.0",
+    "react-email": "^5.2.10",
     "react-router-dom": "^7.13.1",
     "recharts": "^3.8.0",
+    "resend": "^6.9.4",
     "svix": "^1.88.0",
     "tailwind-merge": "^3.5.0",
     "vite": "^6.2.0",
+    "web-push": "^3.6.7",
     "zod": "^4.3.6"
   },
   "devDependencies": {
@@ -42,6 +46,7 @@
     "@types/papaparse": "^5.5.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "@types/web-push": "^3.6.4",
     "autoprefixer": "^10.4.21",
     "supabase": "^2.78.1",
     "tailwindcss": "^4.1.14",

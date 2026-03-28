@@ -8,22 +8,11 @@ export default function LandingPage() {
 
       {/* Brand */}
       <div className="relative z-10 flex flex-col items-center gap-4">
-        <svg
-          width="48"
-          height="48"
-          viewBox="0 0 28 28"
-          fill="none"
-          aria-hidden="true"
-        >
-          <rect width="28" height="28" rx="8" fill="#7c3aed" />
-          <path
-            d="M8 14h12M14 8l6 6-6 6"
-            stroke="white"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
+        <img
+          src="/aether-mark.png"
+          alt="AETHER logo"
+          className="h-16 w-16 rounded-2xl border border-glass-border object-cover shadow-[0_0_24px_rgba(110,231,183,0.22)]"
+        />
         <h1 className="font-display text-4xl font-bold tracking-[0.05em] text-text-primary">
           AETHER
         </h1>

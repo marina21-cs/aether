@@ -13,7 +13,7 @@ NEXT_PUBLIC_VAPID_PUBLIC_KEY=Bxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 VAPID_PRIVATE_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 VAPID_SUBJECT=mailto:admin@aether.ph
 
-# ============================================================
+# =====================================o=======================
 # RESEND (Transactional Email)
 # ============================================================
 # Get from: https://resend.com → API Keys

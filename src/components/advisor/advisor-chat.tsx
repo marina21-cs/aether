@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useUser } from "@clerk/react";
 import { Brain, Sparkles } from "lucide-react";
 import { AdvisorInput } from "@/src/components/advisor/advisor-input";
@@ -80,8 +80,13 @@ export function AdvisorChat({ compact = false }: AdvisorChatProps) {
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rateLimit, setRateLimit] = useState<AdvisorRateLimit | null>(null);
+  const [typingMessageId, setTypingMessageId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const typingIntervalRef = useRef<number | null>(null);
+  const typingQueueRef = useRef("");
+  const renderedContentRef = useRef("");
+  const typingMessageIdRef = useRef<string | null>(null);
 
   const canAsk = Boolean(user?.id) && !isStreaming;
 
@@ -90,11 +95,84 @@ export function AdvisorChat({ compact = false }: AdvisorChatProps) {
     scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages, isStreaming]);
 
+  const stopTypingLoop = useCallback(() => {
+    if (typingIntervalRef.current !== null) {
+      window.clearInterval(typingIntervalRef.current);
+      typingIntervalRef.current = null;
+    }
+  }, []);
+
+  const startTypingLoop = useCallback((messageId: string) => {
+    typingMessageIdRef.current = messageId;
+    setTypingMessageId(messageId);
+
+    if (typingIntervalRef.current !== null) {
+      return;
+    }
+
+    typingIntervalRef.current = window.setInterval(() => {
+      const activeMessageId = typingMessageIdRef.current;
+      if (!activeMessageId) return;
+
+      const queued = typingQueueRef.current;
+      if (!queued) return;
+
+      const charsPerTick = Math.min(16, Math.max(2, Math.ceil(queued.length / 24)));
+      const nextChunk = queued.slice(0, charsPerTick);
+      typingQueueRef.current = queued.slice(charsPerTick);
+      renderedContentRef.current += nextChunk;
+
+      const rendered = renderedContentRef.current;
+      setMessages((prev) =>
+        prev.map((message) =>
+          message.id === activeMessageId ? { ...message, content: rendered } : message
+        )
+      );
+    }, 16);
+  }, []);
+
+  const flushTypingQueue = useCallback(async (timeoutMs = 2500) => {
+    const deadline = Date.now() + timeoutMs;
+    while (typingQueueRef.current.length > 0 && Date.now() < deadline) {
+      await new Promise<void>((resolve) => {
+        window.setTimeout(resolve, 20);
+      });
+    }
+  }, []);
+
+  const finalizeTyping = useCallback(
+    (finalContent: string | null = null) => {
+      const activeMessageId = typingMessageIdRef.current;
+      const contentToPersist = finalContent ?? renderedContentRef.current;
+
+      if (activeMessageId) {
+        setMessages((prev) =>
+          prev.map((message) =>
+            message.id === activeMessageId
+              ? {
+                  ...message,
+                  content: contentToPersist,
+                }
+              : message
+          )
+        );
+      }
+
+      typingQueueRef.current = "";
+      renderedContentRef.current = contentToPersist;
+      typingMessageIdRef.current = null;
+      setTypingMessageId(null);
+      stopTypingLoop();
+    },
+    [stopTypingLoop]
+  );
+
   useEffect(() => {
     return () => {
       abortRef.current?.abort();
+      stopTypingLoop();
     };
-  }, []);
+  }, [stopTypingLoop]);
 
   const suggestionSet = useMemo(() => QUICK_PROMPTS.slice(0, compact ? 2 : QUICK_PROMPTS.length), [compact]);
 
@@ -117,6 +195,7 @@ export function AdvisorChat({ compact = false }: AdvisorChatProps) {
     };
 
     const assistantPlaceholderId = makeId();
+    let didFinalize = false;
 
     const historyForApi = messages
       .filter((message) => message.id !== "welcome")
@@ -133,6 +212,10 @@ export function AdvisorChat({ compact = false }: AdvisorChatProps) {
         createdAt: new Date().toISOString(),
       },
     ]);
+
+    typingQueueRef.current = "";
+    renderedContentRef.current = "";
+    startTypingLoop(assistantPlaceholderId);
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -187,53 +270,39 @@ export function AdvisorChat({ compact = false }: AdvisorChatProps) {
         if (!chunk) continue;
 
         accumulated += chunk;
-        setMessages((prev) =>
-          prev.map((message) =>
-            message.id === assistantPlaceholderId
-              ? { ...message, content: accumulated }
-              : message
-          )
-        );
+        typingQueueRef.current += chunk;
       }
 
-      if (!accumulated.trim()) {
-        setMessages((prev) =>
-          prev.map((message) =>
-            message.id === assistantPlaceholderId
-              ? {
-                  ...message,
-                  content: "No response returned. Please retry your request.",
-                }
-              : message
-          )
-        );
+      const trailingChunk = decoder.decode();
+      if (trailingChunk) {
+        accumulated += trailingChunk;
+        typingQueueRef.current += trailingChunk;
       }
+
+      await flushTypingQueue();
+
+      if (!accumulated.trim()) {
+        finalizeTyping("No response returned. Please retry your request.");
+      } else {
+        finalizeTyping(accumulated);
+      }
+      didFinalize = true;
     } catch (rawError) {
       if ((rawError as Error)?.name === "AbortError") {
-        setMessages((prev) =>
-          prev.map((message) =>
-            message.id === assistantPlaceholderId && message.content.trim().length === 0
-              ? {
-                  ...message,
-                  content: "Response stopped.",
-                }
-              : message
-          )
+        const partialContent = renderedContentRef.current.trim();
+        finalizeTyping(
+          partialContent.length === 0 ? "Response stopped." : renderedContentRef.current
         );
+        didFinalize = true;
       } else {
         setError(extractErrorMessage(rawError));
-        setMessages((prev) =>
-          prev.map((message) =>
-            message.id === assistantPlaceholderId
-              ? {
-                  ...message,
-                  content: "Advisor temporarily unavailable. Please try again.",
-                }
-              : message
-          )
-        );
+        finalizeTyping("Advisor temporarily unavailable. Please try again.");
+        didFinalize = true;
       }
     } finally {
+      if (!didFinalize) {
+        finalizeTyping(renderedContentRef.current);
+      }
       setIsStreaming(false);
       abortRef.current = null;
     }
@@ -270,7 +339,11 @@ export function AdvisorChat({ compact = false }: AdvisorChatProps) {
 
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
         {messages.map((message) => (
-          <AdvisorMessage key={message.id} message={message} />
+          <AdvisorMessage
+            key={message.id}
+            message={message}
+            isTyping={isStreaming && message.id === typingMessageId}
+          />
         ))}
       </div>
 

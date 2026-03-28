@@ -24,6 +24,10 @@ import {
   type RealReturnResponse,
 } from "@/src/lib/api/phase3";
 import { formatCurrency } from "@/src/lib/utils";
+import {
+  ContextualLiteracyPanel,
+  GlossaryTerm,
+} from "@/feature/phase_1_contextual_literacy";
 
 const SEVERITY_COLOR: Record<"critical" | "warning" | "info", string> = {
   critical: "#F87171",
@@ -105,7 +109,7 @@ export function FeeScanner() {
         <div>
           <h1 className="font-display text-3xl font-bold text-white">Fee Analyzer & Real Return</h1>
           <p className="text-sm text-text-secondary">
-            Quantify fee drag and inflation-adjusted performance with transparent assumptions.
+            Quantify <GlossaryTerm term="fee drag" /> and <GlossaryTerm term="real return" /> with plain-language coaching.
           </p>
         </div>
         <button
@@ -123,13 +127,28 @@ export function FeeScanner() {
         </div>
       )}
 
+      <ContextualLiteracyPanel
+        context="liabilities"
+        signals={{
+          weightedAnnualFeePct,
+          negativeRealCount,
+          projectedFeeCost: feeData?.totalTenYearCost ?? 0,
+          holdingsCount: feeData?.results.length ?? 0,
+        }}
+        metricLabel="Potential 10-year fee drag"
+        metricValue={loading || !feeData ? "Loading..." : formatCurrency(feeData.totalTenYearCost)}
+        metricExplanation="Fees compound over time. Lowering recurring costs can improve long-term outcomes without increasing market risk."
+      />
+
       <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <article className="glass-panel rounded-2xl border border-glass-border p-5">
           <p className="text-xs uppercase tracking-[0.08em] text-text-muted">10-Year Fee Cost</p>
           <p className="mt-2 text-2xl font-bold text-text-primary tabular-nums" style={{ fontFamily: "JetBrains Mono, monospace" }}>
             {loading || !feeData ? "..." : formatCurrency(feeData.totalTenYearCost)}
           </p>
-          <p className="mt-1 text-[11px] text-text-muted">P × ((1+r)^n − (1+r−f)^n)</p>
+          <p className="mt-1 text-[11px] text-text-muted">
+            Estimated <GlossaryTerm term="fee drag" /> over 10 years.
+          </p>
         </article>
 
         <article className="glass-panel rounded-2xl border border-glass-border p-5">
@@ -137,7 +156,9 @@ export function FeeScanner() {
           <p className="mt-2 text-2xl font-bold text-accent-warning tabular-nums" style={{ fontFamily: "JetBrains Mono, monospace" }}>
             {loading ? "..." : `${weightedAnnualFeePct.toFixed(2)}%`}
           </p>
-          <p className="mt-1 text-[11px] text-text-muted">By current asset value</p>
+          <p className="mt-1 text-[11px] text-text-muted">
+            Blended <GlossaryTerm term="annual fee" /> by current asset value.
+          </p>
         </article>
 
         <article className="glass-panel rounded-2xl border border-glass-border p-5">
@@ -145,7 +166,9 @@ export function FeeScanner() {
           <p className="mt-2 text-2xl font-bold text-accent-danger tabular-nums" style={{ fontFamily: "JetBrains Mono, monospace" }}>
             {loading ? "..." : negativeRealCount}
           </p>
-          <p className="mt-1 text-[11px] text-text-muted">Nominal return below inflation impact</p>
+          <p className="mt-1 text-[11px] text-text-muted">
+            Holdings where <GlossaryTerm term="real return" /> is below zero.
+          </p>
         </article>
       </section>
 

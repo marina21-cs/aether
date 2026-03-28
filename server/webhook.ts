@@ -3,6 +3,18 @@ import { Webhook } from "svix";
 import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
 import Papa from "papaparse";
+import webpush from "web-push";
+import { Resend } from "resend";
+import {
+  formatRagContextForPrompt,
+  ingestRagDocument,
+  normalizeRagSourceType,
+  normalizeRagTags,
+  searchRagContext,
+  type RagIngestRequest,
+  type RagSearchResult,
+  type RagSourceType,
+} from "./rag";
 
 dotenv.config({ path: ".env.local" });
 
@@ -34,7 +46,7 @@ const AI_UPSTREAM_RETRY_MAX_MS = Math.max(
   AI_UPSTREAM_RETRY_BASE_MS,
   Number(process.env.AI_UPSTREAM_RETRY_MAX_MS || 6_000)
 );
-const AI_MAX_TOKENS = Number(process.env.AI_MAX_TOKENS || 1024);
+const AI_MAX_TOKENS = Number(process.env.AI_MAX_TOKENS || 1536);
 const AI_TEMPERATURE = Number(process.env.AI_TEMPERATURE || 0.3);
 const AI_RATE_LIMIT_FREE = Number(process.env.AI_RATE_LIMIT_FREE || 20);
 const AI_RATE_LIMIT_PRO = Number(process.env.AI_RATE_LIMIT_PRO || 100);
@@ -44,6 +56,7 @@ const PH_CPI_RATE = Number(process.env.PH_CPI_RATE || 6.1);
 const PH_PSEI_LEVEL = Number(process.env.PH_PSEI_LEVEL || 6800);
 const APP_URL = process.env.VITE_APP_URL || "http://localhost:3000";
 const APP_NAME = process.env.VITE_APP_NAME || "AETHER";
+const EXCHANGE_RATE_API_KEY = process.env.VITE_EXCHANGE_RATE_API_KEY || "";
 const MARKET_QUOTE_TIMEOUT_MS = Math.max(
   1500,
   Number(process.env.MARKET_QUOTE_TIMEOUT_MS || 6000)
@@ -52,6 +65,48 @@ const MARKET_QUOTE_CACHE_TTL_MS = Math.max(
   15000,
   Number(process.env.MARKET_QUOTE_CACHE_TTL_MS || 60000)
 );
+
+const ALERT_CHECK_INTERVAL = Math.max(
+  60_000,
+  Number(process.env.ALERT_CHECK_INTERVAL || 300_000)
+);
+const MAX_ALERTS_FREE = Math.max(1, Number(process.env.MAX_ALERTS_FREE || 10));
+const MAX_ALERTS_PRO = Math.max(MAX_ALERTS_FREE, Number(process.env.MAX_ALERTS_PRO || 50));
+const NEXT_PUBLIC_VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || "";
+const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || "";
+const VAPID_SUBJECT = process.env.VAPID_SUBJECT || "mailto:hello@aether.ph";
+const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
+const RESEND_FROM_EMAIL = process.env.RESEND_FROM_EMAIL || "AETHER <onboarding@resend.dev>";
+const RAG_CHUNK_SIZE = Math.max(128, Number(process.env.RAG_CHUNK_SIZE || 512));
+const RAG_CHUNK_OVERLAP = Math.max(
+  0,
+  Math.min(RAG_CHUNK_SIZE - 1, Number(process.env.RAG_CHUNK_OVERLAP || 50))
+);
+const RAG_TOP_K = Math.max(1, Math.min(10, Number(process.env.RAG_TOP_K || 5)));
+const RAG_SIMILARITY_THRESHOLD = Math.max(
+  0,
+  Number(process.env.RAG_SIMILARITY_THRESHOLD || 0.25)
+);
+const RAG_ADMIN_USER_IDS = new Set(
+  (process.env.RAG_ADMIN_USER_IDS || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0)
+);
+
+const CRYPTO_TICKER_TO_COINGECKO_ID: Record<string, string> = {
+  BTC: "bitcoin",
+  ETH: "ethereum",
+  SOL: "solana",
+  XRP: "ripple",
+  ADA: "cardano",
+  BNB: "binancecoin",
+  DOGE: "dogecoin",
+  DOT: "polkadot",
+  MATIC: "matic-network",
+  AVAX: "avalanche-2",
+  LINK: "chainlink",
+};
 
 type SubscriptionTier = "free" | "pro";
 type ChatRole = "user" | "assistant";
@@ -119,6 +174,68 @@ interface SimulationParams {
   numPaths: number;
   stepsPerYear: number;
   periodicContribution?: number;
+}
+
+type AlertType =
+  | "price_target"
+  | "psei_threshold"
+  | "bsp_rate_change"
+  | "crypto_volatility"
+  | "portfolio_drop"
+  | "portfolio_gain";
+
+type AlertCondition = "above" | "below" | "change_pct";
+
+interface ScenarioEventInput {
+  name: string;
+  amount: number;
+  date: string;
+  type: "inflow" | "outflow";
+}
+
+interface ScenarioModificationInput {
+  type:
+    | "add_asset"
+    | "remove_asset"
+    | "change_allocation"
+    | "change_savings_rate"
+    | "one_time_event";
+  asset?: {
+    name?: string;
+    ticker?: string;
+    class?: string;
+    value?: number;
+    quantity?: number;
+  };
+  newAllocationPct?: number;
+  savingsRateChange?: number;
+  event?: ScenarioEventInput;
+}
+
+interface AlertRow {
+  id: string;
+  user_id: string;
+  alert_type: AlertType;
+  asset_ticker: string | null;
+  condition: AlertCondition;
+  threshold: number;
+  is_active: boolean;
+  last_triggered_at: string | null;
+  created_at: string;
+}
+
+interface AlertCheckResult {
+  alert: AlertRow;
+  triggered: boolean;
+  currentValue: number;
+  message: string;
+}
+
+interface Phase4ProfileRow {
+  id: string;
+  email: string | null;
+  full_name: string | null;
+  subscription_tier: SubscriptionTier;
 }
 
 interface RateEntry {
@@ -240,6 +357,19 @@ interface MarketQuoteCacheEntry {
 const advisorRateLimitStore = new Map<string, RateEntry>();
 const advisorCacheStore = new Map<string, CacheEntry>();
 const marketQuoteCacheStore = new Map<string, MarketQuoteCacheEntry>();
+const resendClient = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
+
+if (NEXT_PUBLIC_VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
+  try {
+    webpush.setVapidDetails(
+      VAPID_SUBJECT,
+      NEXT_PUBLIC_VAPID_PUBLIC_KEY,
+      VAPID_PRIVATE_KEY
+    );
+  } catch (error) {
+    console.error("Web Push VAPID configuration failed:", error);
+  }
+}
 
 function nowMs() {
   return Date.now();
@@ -562,18 +692,25 @@ function buildSystemPrompt(context: PortfolioContext): string {
     "You are AETHER AI Advisor, a financial analysis assistant for Filipino retail investors.",
     "You provide analysis grounded on the user's portfolio and Philippine market context.",
     "",
-    "Output format (always in this order):",
-    "1) Answer",
-    "2) Data",
-    "3) Sources",
-    "4) Confidence",
+    "Output format (always in this exact order and include every section):",
+    "Answer:",
+    "Data:",
+    "Sources:",
+    "Confidence:",
+    "Disclaimer:",
     "",
     "Rules:",
+    "- Use formal plain text.",
+    "- Do not use Markdown symbols or formatting (no **, *, _, #, backticks).",
+    "- Do not use Markdown tables, pipes, or code blocks.",
+    "- In Data and Sources, use short bullets that start with '-'.",
+    "- Keep bullet lines short and practical.",
+    "- If data is incomplete, explicitly state what is missing, but still provide all sections.",
     "- Use PHP as base currency unless user asks otherwise.",
     "- Explain assumptions and math where relevant (Glass Box principle).",
     "- Never recommend exact buy/sell execution.",
     "- Never claim to execute trades, transfers, tax actions, or account actions.",
-    "- Keep responses concise and practical.",
+    "- Keep responses concise, practical, and easy to understand.",
     "",
     "User portfolio context:",
     `- Net worth: PHP ${context.netWorth.toLocaleString("en-PH", {
@@ -596,7 +733,7 @@ function buildSystemPrompt(context: PortfolioContext): string {
     `- PSEi level: ${context.pseiLevel}`,
     "",
     "Append this exact disclaimer at the end of every response:",
-    "_AETHER provides analysis, not licensed financial advice. Consult a registered financial advisor for personal decisions._",
+    "AETHER provides analysis, not licensed financial advice. Consult a registered financial advisor for personal decisions.",
   ].join("\n");
 }
 
@@ -657,10 +794,10 @@ function buildLocalAdvisorFallbackResponse(
       : "- No allocation data yet.";
 
   return [
-    "Answer",
+    "Answer:",
     answerLines.join(" "),
     "",
-    "Data",
+    "Data:",
     `- Net worth: PHP ${context.netWorth.toLocaleString("en-PH", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
@@ -676,14 +813,15 @@ function buildLocalAdvisorFallbackResponse(
     topHoldingsBlock,
     `- PH macro defaults: BSP ${context.bspRate.toFixed(2)}%, CPI ${context.cpiRate.toFixed(1)}%, PSEi ${context.pseiLevel}`,
     "",
-    "Sources",
+    "Sources:",
     "- AETHER local portfolio snapshot (assets/liabilities from your account).",
     "- App-configured Philippine macro defaults for BSP, CPI, and PSEi.",
     "",
-    "Confidence",
+    "Confidence:",
     "Medium for portfolio structure, lower for live market catalysts until upstream AI service recovers.",
     "",
-    "_AETHER provides analysis, not licensed financial advice. Consult a registered financial advisor for personal decisions._",
+    "Disclaimer:",
+    "AETHER provides analysis, not licensed financial advice. Consult a registered financial advisor for personal decisions.",
   ].join("\n");
 }
 
@@ -889,6 +1027,608 @@ function mapProfileLookupError(
     status: 500,
     code: "PROFILE_LOOKUP_FAILED",
     message: "Unable to verify profile for the provided userId.",
+  };
+}
+
+const ALERT_TYPES: AlertType[] = [
+  "price_target",
+  "psei_threshold",
+  "bsp_rate_change",
+  "crypto_volatility",
+  "portfolio_drop",
+  "portfolio_gain",
+];
+
+const ALERT_CONDITIONS: AlertCondition[] = ["above", "below", "change_pct"];
+
+function toFiniteNumber(input: unknown, fallback = 0): number {
+  const value = Number(input);
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function normalizeAlertType(input: unknown): AlertType | null {
+  if (typeof input !== "string") return null;
+  return ALERT_TYPES.includes(input as AlertType) ? (input as AlertType) : null;
+}
+
+function normalizeAlertCondition(input: unknown): AlertCondition | null {
+  if (typeof input !== "string") return null;
+  return ALERT_CONDITIONS.includes(input as AlertCondition)
+    ? (input as AlertCondition)
+    : null;
+}
+
+function parseScenarioModifications(input: unknown): ScenarioModificationInput[] {
+  if (!Array.isArray(input)) return [];
+
+  const modifications: ScenarioModificationInput[] = [];
+  for (const item of input) {
+    if (!item || typeof item !== "object") continue;
+    const candidate = item as Record<string, unknown>;
+    const type = candidate.type;
+
+    if (
+      type !== "add_asset" &&
+      type !== "remove_asset" &&
+      type !== "change_allocation" &&
+      type !== "change_savings_rate" &&
+      type !== "one_time_event"
+    ) {
+      continue;
+    }
+
+    const assetRaw = candidate.asset;
+    const asset =
+      assetRaw && typeof assetRaw === "object"
+        ? {
+            name: typeof (assetRaw as Record<string, unknown>).name === "string"
+              ? ((assetRaw as Record<string, unknown>).name as string)
+              : undefined,
+            ticker: typeof (assetRaw as Record<string, unknown>).ticker === "string"
+              ? ((assetRaw as Record<string, unknown>).ticker as string).toUpperCase()
+              : undefined,
+            class: typeof (assetRaw as Record<string, unknown>).class === "string"
+              ? ((assetRaw as Record<string, unknown>).class as string)
+              : undefined,
+            value: toFiniteNumber((assetRaw as Record<string, unknown>).value, 0),
+            quantity: toFiniteNumber((assetRaw as Record<string, unknown>).quantity, 0),
+          }
+        : undefined;
+
+    const eventRaw = candidate.event;
+    let event: ScenarioEventInput | undefined;
+    if (eventRaw && typeof eventRaw === "object") {
+      const eventType =
+        (eventRaw as Record<string, unknown>).type === "outflow" ? "outflow" : "inflow";
+      event = {
+        name:
+          typeof (eventRaw as Record<string, unknown>).name === "string"
+            ? ((eventRaw as Record<string, unknown>).name as string)
+            : "Scenario event",
+        amount: Math.max(toFiniteNumber((eventRaw as Record<string, unknown>).amount, 0), 0),
+        date:
+          typeof (eventRaw as Record<string, unknown>).date === "string"
+            ? ((eventRaw as Record<string, unknown>).date as string)
+            : new Date().toISOString(),
+        type: eventType,
+      };
+    }
+
+    const rawAllocation = Number(candidate.newAllocationPct);
+    const rawSavingsDelta = Number(candidate.savingsRateChange);
+
+    modifications.push({
+      type,
+      asset,
+      newAllocationPct: Number.isFinite(rawAllocation) ? rawAllocation : undefined,
+      savingsRateChange: Number.isFinite(rawSavingsDelta) ? rawSavingsDelta : undefined,
+      event,
+    });
+  }
+
+  return modifications;
+}
+
+function parseScenarioEvents(input: unknown): ScenarioEventInput[] {
+  if (!Array.isArray(input)) return [];
+  return input
+    .filter((item) => item && typeof item === "object")
+    .map((item) => {
+      const row = item as Record<string, unknown>;
+      return {
+        name: typeof row.name === "string" ? row.name : "Scenario event",
+        amount: Math.max(toFiniteNumber(row.amount, 0), 0),
+        date: typeof row.date === "string" ? row.date : new Date().toISOString(),
+        type: row.type === "outflow" ? "outflow" : "inflow",
+      } satisfies ScenarioEventInput;
+    });
+}
+
+function runScenarioSimulationPhase4(input: {
+  baseNetWorth: number;
+  baseReturn: number;
+  baseVolatility: number;
+  years: number;
+  monthlySavings: number;
+  modifications: ScenarioModificationInput[];
+}) {
+  let adjustedValue = Math.max(input.baseNetWorth, 0);
+  let adjustedReturn = Math.max(input.baseReturn, -0.99);
+  let adjustedVolatility = Math.max(input.baseVolatility, 0.01);
+  let adjustedMonthlySavings = Math.max(input.monthlySavings, 0);
+  const eventAnnotations: Array<{ year: number; label: string; impact: number }> = [];
+
+  for (const mod of input.modifications) {
+    switch (mod.type) {
+      case "add_asset":
+        adjustedValue += Math.max(mod.asset?.value || 0, 0);
+        break;
+      case "remove_asset":
+        adjustedValue -= Math.max(mod.asset?.value || 0, 0);
+        break;
+      case "change_allocation": {
+        const target = mod.newAllocationPct;
+        if (typeof target === "number" && Number.isFinite(target)) {
+          const equityShift = (target - 60) / 100;
+          adjustedReturn += equityShift * 0.04;
+          adjustedVolatility += equityShift * 0.08;
+        }
+        break;
+      }
+      case "change_savings_rate":
+        adjustedMonthlySavings = Math.max(adjustedMonthlySavings + (mod.savingsRateChange || 0), 0);
+        break;
+      case "one_time_event": {
+        if (!mod.event) break;
+        const eventImpact =
+          mod.event.type === "outflow"
+            ? -Math.abs(mod.event.amount)
+            : Math.abs(mod.event.amount);
+        adjustedValue += eventImpact;
+
+        const eventDate = new Date(mod.event.date).getTime();
+        const eventYear = Number.isFinite(eventDate)
+          ? Math.max(
+              1,
+              Math.min(
+                input.years,
+                Math.round((eventDate - Date.now()) / (365.25 * 24 * 60 * 60 * 1000))
+              )
+            )
+          : 1;
+
+        eventAnnotations.push({
+          year: eventYear,
+          label: mod.event.name,
+          impact: eventImpact,
+        });
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
+  const simulation = runMonteCarloSimulation({
+    initialValue: Math.max(adjustedValue, 0),
+    expectedReturn: adjustedReturn,
+    volatility: Math.max(adjustedVolatility, 0.01),
+    years: Math.max(1, Math.round(input.years)),
+    numPaths: 1000,
+    stepsPerYear: 12,
+    periodicContribution: adjustedMonthlySavings,
+  });
+
+  return {
+    ...simulation,
+    events: eventAnnotations,
+  };
+}
+
+function checkAlertConditions(
+  alerts: AlertRow[],
+  prices: Array<{ ticker: string; price_php: number }>,
+  portfolioValue: number,
+  previousPortfolioValue: number
+): AlertCheckResult[] {
+  const priceMap = new Map(prices.map((entry) => [entry.ticker.toUpperCase(), Number(entry.price_php || 0)]));
+  const results: AlertCheckResult[] = [];
+
+  for (const alert of alerts) {
+    if (!alert.is_active) continue;
+
+    let currentValue = 0;
+    let triggered = false;
+    let message = "";
+
+    switch (alert.alert_type) {
+      case "price_target": {
+        const ticker = (alert.asset_ticker || "").toUpperCase();
+        currentValue = priceMap.get(ticker) || 0;
+        triggered = alert.condition === "above"
+          ? currentValue >= alert.threshold
+          : currentValue <= alert.threshold;
+        message = `${ticker || "Asset"} is at ${currentValue.toLocaleString("en-PH", { maximumFractionDigits: 4 })}`;
+        break;
+      }
+
+      case "psei_threshold": {
+        currentValue = priceMap.get("PSEI") || PH_PSEI_LEVEL;
+        triggered = alert.condition === "above"
+          ? currentValue >= alert.threshold
+          : currentValue <= alert.threshold;
+        message = `PSEi is at ${currentValue.toLocaleString("en-PH", { maximumFractionDigits: 2 })}`;
+        break;
+      }
+
+      case "bsp_rate_change": {
+        currentValue = PH_BSP_RATE;
+        triggered = Math.abs(currentValue - alert.threshold) > 0.0001;
+        message = `BSP policy rate is ${currentValue.toFixed(2)}%`;
+        break;
+      }
+
+      case "crypto_volatility": {
+        const ticker = (alert.asset_ticker || "BTC").toUpperCase();
+        currentValue = priceMap.get(ticker) || 0;
+        triggered = false;
+        message = `${ticker} volatility checks require historical snapshots`;
+        break;
+      }
+
+      case "portfolio_drop": {
+        currentValue = portfolioValue;
+        const denominator = Math.max(previousPortfolioValue, 1);
+        const changePct = ((portfolioValue - previousPortfolioValue) / denominator) * 100;
+        triggered = Math.abs(changePct) >= alert.threshold && changePct < 0;
+        message = `Portfolio moved ${changePct.toFixed(2)}% vs previous snapshot`;
+        break;
+      }
+
+      case "portfolio_gain": {
+        currentValue = portfolioValue;
+        const denominator = Math.max(previousPortfolioValue, 1);
+        const changePct = ((portfolioValue - previousPortfolioValue) / denominator) * 100;
+        triggered = changePct >= alert.threshold;
+        message = `Portfolio moved ${changePct.toFixed(2)}% vs previous snapshot`;
+        break;
+      }
+
+      default:
+        continue;
+    }
+
+    results.push({
+      alert,
+      triggered,
+      currentValue,
+      message,
+    });
+  }
+
+  return results;
+}
+
+async function sendPushNotificationsForUser(
+  userId: string,
+  payload: { title: string; body: string; url?: string }
+): Promise<number> {
+  if (!NEXT_PUBLIC_VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
+    return 0;
+  }
+
+  const { data, error } = await supabase
+    .from("push_subscriptions")
+    .select("id, endpoint, p256dh, auth_key")
+    .eq("user_id", userId);
+
+  if (error || !Array.isArray(data) || data.length === 0) {
+    return 0;
+  }
+
+  let sentCount = 0;
+
+  for (const subscription of data) {
+    try {
+      await webpush.sendNotification(
+        {
+          endpoint: subscription.endpoint,
+          keys: {
+            p256dh: subscription.p256dh,
+            auth: subscription.auth_key,
+          },
+        },
+        JSON.stringify(payload)
+      );
+      sentCount += 1;
+    } catch (error) {
+      const statusCode = Number((error as { statusCode?: number })?.statusCode || 0);
+      if (statusCode === 404 || statusCode === 410) {
+        await supabase.from("push_subscriptions").delete().eq("id", subscription.id);
+      }
+    }
+  }
+
+  return sentCount;
+}
+
+async function sendTriggeredAlertEmail(
+  profile: Phase4ProfileRow,
+  triggeredResults: AlertCheckResult[]
+): Promise<boolean> {
+  if (!resendClient || !profile.email || triggeredResults.length === 0) {
+    return false;
+  }
+
+  const safeName = profile.full_name || "there";
+  const rows = triggeredResults
+    .slice(0, 8)
+    .map((result) => `<li>${result.message} (threshold ${result.alert.threshold})</li>`)
+    .join("");
+
+  try {
+    await resendClient.emails.send({
+      from: RESEND_FROM_EMAIL,
+      to: profile.email,
+      subject: `AETHER Alert Update (${triggeredResults.length})`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; padding: 24px; color: #111827;">
+          <h2 style="margin: 0 0 12px;">AETHER Alert Summary</h2>
+          <p style="margin: 0 0 16px;">Hi ${safeName}, ${triggeredResults.length} alert(s) were triggered in your portfolio monitor.</p>
+          <ul style="margin: 0 0 16px; padding-left: 18px;">${rows}</ul>
+          <p style="margin: 0;">Open your dashboard to review details.</p>
+        </div>
+      `,
+    });
+    return true;
+  } catch (error) {
+    console.error("Alert email send failed:", error);
+    return false;
+  }
+}
+
+async function loadPhase4Profile(userId: string): Promise<{
+  profile: Phase4ProfileRow | null;
+  lookupError: ProfileLookupError | null;
+}> {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, email, full_name, subscription_tier")
+    .eq("id", userId)
+    .single();
+
+  if (error) {
+    return {
+      profile: null,
+      lookupError: mapProfileLookupError(error),
+    };
+  }
+
+  return {
+    profile: data ? (data as Phase4ProfileRow) : null,
+    lookupError: null,
+  };
+}
+
+function isRagIngestAllowed(userId: string, profile: Phase4ProfileRow | null): boolean {
+  if (RAG_ADMIN_USER_IDS.has(userId)) return true;
+  return profile?.subscription_tier === "pro";
+}
+
+async function beginPipelineRunLog(
+  pipelineType: "price_refresh" | "cpi_update" | "alert_check" | "corpus_ingest",
+  metadata: Record<string, unknown>
+): Promise<string | null> {
+  const runId = crypto.randomUUID();
+  const { error } = await supabase.from("pipeline_runs").insert({
+    id: runId,
+    pipeline_type: pipelineType,
+    status: "running",
+    metadata,
+  });
+
+  if (error) return null;
+  return runId;
+}
+
+async function finishPipelineRunLog(
+  runId: string | null,
+  payload: {
+    status: "success" | "failed";
+    recordsProcessed: number;
+    errorMessage?: string;
+  }
+): Promise<void> {
+  if (!runId) return;
+
+  await supabase
+    .from("pipeline_runs")
+    .update({
+      status: payload.status,
+      records_processed: payload.recordsProcessed,
+      error_message: payload.errorMessage || null,
+      completed_at: new Date().toISOString(),
+    })
+    .eq("id", runId);
+}
+
+async function fetchUsdFxSnapshot(): Promise<{ PHP: number; SGD: number; HKD: number }> {
+  const fallback = {
+    PHP: 56.5,
+    SGD: 1.34,
+    HKD: 7.81,
+  };
+
+  if (!EXCHANGE_RATE_API_KEY) {
+    return fallback;
+  }
+
+  try {
+    const response = await fetch(
+      `https://v6.exchangerate-api.com/v6/${EXCHANGE_RATE_API_KEY}/latest/USD`
+    );
+
+    if (!response.ok) {
+      return fallback;
+    }
+
+    const payload = (await response.json()) as {
+      conversion_rates?: Record<string, number>;
+    };
+
+    const rates = payload.conversion_rates || {};
+    return {
+      PHP: Number.isFinite(Number(rates.PHP)) ? Number(rates.PHP) : fallback.PHP,
+      SGD: Number.isFinite(Number(rates.SGD)) ? Number(rates.SGD) : fallback.SGD,
+      HKD: Number.isFinite(Number(rates.HKD)) ? Number(rates.HKD) : fallback.HKD,
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+async function runPriceRefreshPipeline(): Promise<{
+  processed: number;
+  cryptoUpdated: number;
+  fxUpdated: number;
+}> {
+  const { data: assets, error: assetError } = await supabase
+    .from("assets")
+    .select("asset_class, ticker_or_name")
+    .eq("asset_class", "crypto")
+    .limit(5000);
+
+  if (assetError) {
+    throw new Error(`Failed to load crypto assets: ${assetError.message}`);
+  }
+
+  const cryptoTickers = Array.from(
+    new Set(
+      (assets || [])
+        .map((row) => String(row.ticker_or_name || "").trim().toUpperCase())
+        .filter((value) => value.length > 0)
+    )
+  );
+
+  const coingeckoPairs = cryptoTickers
+    .map((ticker) => ({
+      ticker,
+      id: CRYPTO_TICKER_TO_COINGECKO_ID[ticker],
+    }))
+    .filter((entry) => Boolean(entry.id));
+
+  let cryptoUpdated = 0;
+
+  if (coingeckoPairs.length > 0) {
+    const uniqueIds = Array.from(new Set(coingeckoPairs.map((entry) => entry.id)));
+    const response = await fetch(
+      `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(
+        uniqueIds.join(",")
+      )}&vs_currencies=php`
+    );
+
+    if (response.ok) {
+      const payload = (await response.json()) as Record<string, { php?: number }>;
+
+      const rows = coingeckoPairs
+        .map((entry) => {
+          const phpPrice = Number(payload?.[entry.id]?.php);
+          if (!Number.isFinite(phpPrice) || phpPrice <= 0) return null;
+          return {
+            ticker: entry.ticker,
+            price_php: phpPrice,
+            source: "coingecko",
+            fetched_at: new Date().toISOString(),
+          };
+        })
+        .filter((row): row is { ticker: string; price_php: number; source: string; fetched_at: string } => Boolean(row));
+
+      if (rows.length > 0) {
+        const { error: upsertError } = await supabase
+          .from("price_cache")
+          .upsert(rows, { onConflict: "ticker" });
+
+        if (upsertError) {
+          throw new Error(`Failed to upsert crypto prices: ${upsertError.message}`);
+        }
+
+        cryptoUpdated = rows.length;
+      }
+    }
+  }
+
+  const fx = await fetchUsdFxSnapshot();
+  const fxRows = [
+    {
+      ticker: "USD/PHP",
+      price_php: fx.PHP,
+      source: EXCHANGE_RATE_API_KEY ? "exchange-rate-api" : "fallback",
+      fetched_at: new Date().toISOString(),
+    },
+    {
+      ticker: "SGD/PHP",
+      price_php: fx.PHP / fx.SGD,
+      source: EXCHANGE_RATE_API_KEY ? "exchange-rate-api" : "fallback",
+      fetched_at: new Date().toISOString(),
+    },
+    {
+      ticker: "HKD/PHP",
+      price_php: fx.PHP / fx.HKD,
+      source: EXCHANGE_RATE_API_KEY ? "exchange-rate-api" : "fallback",
+      fetched_at: new Date().toISOString(),
+    },
+  ];
+
+  const { error: fxError } = await supabase
+    .from("price_cache")
+    .upsert(fxRows, { onConflict: "ticker" });
+
+  if (fxError) {
+    throw new Error(`Failed to upsert FX prices: ${fxError.message}`);
+  }
+
+  return {
+    processed: cryptoUpdated + fxRows.length,
+    cryptoUpdated,
+    fxUpdated: fxRows.length,
+  };
+}
+
+async function loadMacroSnapshot(): Promise<{
+  bspRate: number;
+  cpiRate: number;
+  pseiLevel: number;
+}> {
+  const fallback = {
+    bspRate: PH_BSP_RATE,
+    cpiRate: PH_CPI_RATE,
+    pseiLevel: PH_PSEI_LEVEL,
+  };
+
+  const { data, error } = await supabase
+    .from("price_cache")
+    .select("ticker, price_php")
+    .in("ticker", ["PH_CPI", "PSEI", "BSP_RATE"]);
+
+  if (error || !Array.isArray(data)) {
+    return fallback;
+  }
+
+  const map = new Map(
+    data.map((row) => [
+      String(row.ticker || "").toUpperCase(),
+      Number(row.price_php || 0),
+    ])
+  );
+
+  const cpi = Number(map.get("PH_CPI"));
+  const psei = Number(map.get("PSEI"));
+  const bsp = Number(map.get("BSP_RATE"));
+
+  return {
+    bspRate: Number.isFinite(bsp) && bsp > 0 ? bsp : fallback.bspRate,
+    cpiRate: Number.isFinite(cpi) ? cpi : fallback.cpiRate,
+    pseiLevel: Number.isFinite(psei) && psei > 0 ? psei : fallback.pseiLevel,
   };
 }
 
@@ -1837,29 +2577,34 @@ app.post("/api/v1/data/analyze-csv", async (req, res) => {
       });
     }
 
-    const { data: profile, error: profileError } = await supabase
+    // Ensure a profile row exists for newly-created accounts before CSV analysis.
+    const { error: profileEnsureError } = await supabase
       .from("profiles")
-      .select("id")
-      .eq("id", userId)
-      .single();
-
-    const profileLookupError = mapProfileLookupError(profileError);
-    if (profileLookupError) {
-      return res.status(profileLookupError.status).json({
-        error: {
-          code: profileLookupError.code,
-          message: profileLookupError.message,
-          status: profileLookupError.status,
+      .upsert(
+        {
+          id: userId,
+          updated_at: new Date().toISOString(),
         },
-      });
-    }
+        { onConflict: "id" }
+      );
 
-    if (!profile) {
-      return res.status(404).json({
+    if (profileEnsureError) {
+      if (isSupabaseAuthError(profileEnsureError)) {
+        return res.status(503).json({
+          error: {
+            code: "SUPABASE_AUTH_INVALID",
+            message:
+              "Server data access is not configured correctly. Update SUPABASE_SERVICE_ROLE_KEY and restart the webhook API.",
+            status: 503,
+          },
+        });
+      }
+
+      return res.status(500).json({
         error: {
-          code: "PROFILE_NOT_FOUND",
-          message: "Profile not found for the provided userId.",
-          status: 404,
+          code: "PROFILE_ENSURE_FAILED",
+          message: "Failed to initialize profile before CSV analysis.",
+          status: 500,
         },
       });
     }
@@ -2333,14 +3078,38 @@ app.post("/api/v1/advisor/ask", async (req, res) => {
     const safeAssets = (assets || []) as AssetRow[];
     const safeLiabilities = (liabilities || []) as LiabilityRow[];
     const portfolioContext = buildPortfolioContext(profile as ProfileRow, safeAssets, safeLiabilities);
+    const macroSnapshot = await loadMacroSnapshot();
+    portfolioContext.bspRate = macroSnapshot.bspRate;
+    portfolioContext.cpiRate = macroSnapshot.cpiRate;
+    portfolioContext.pseiLevel = macroSnapshot.pseiLevel;
+
+    let ragResults: RagSearchResult[] = [];
+    try {
+      ragResults = await searchRagContext({
+        supabase,
+        query: normalizedMessage,
+        topK: RAG_TOP_K,
+        similarityThreshold: RAG_SIMILARITY_THRESHOLD,
+      });
+    } catch (error) {
+      console.error("RAG retrieval failed (advisor fallback to portfolio-only prompt):", error);
+      ragResults = [];
+    }
+
+    const ragContext = formatRagContextForPrompt(ragResults);
+    const systemPrompt = ragContext
+      ? `${buildSystemPrompt(portfolioContext)}\n${ragContext}`
+      : buildSystemPrompt(portfolioContext);
+    const ragFingerprint = ragResults.map((row) => row.id).join(",");
 
     cleanExpiredAdvisorCache();
-    const cacheKey = buildAdvisorCacheKey(userId, normalizedMessage, portfolioContext);
+    const cacheKey = `${buildAdvisorCacheKey(userId, normalizedMessage, portfolioContext)}:${ragFingerprint}`;
     const cached = advisorCacheStore.get(cacheKey);
 
     res.setHeader("X-RateLimit-Limit", String(rateCheck.limit));
     res.setHeader("X-RateLimit-Remaining", String(rateCheck.remaining));
     res.setHeader("X-RateLimit-Reset", String(rateCheck.resetAt));
+    res.setHeader("X-RAG-Sources", String(ragResults.length));
 
     if (cached && cached.expiresAt > nowMs()) {
       res.setHeader("X-Advisor-Cache", "HIT");
@@ -2365,7 +3134,7 @@ app.post("/api/v1/advisor/ask", async (req, res) => {
       }));
 
     const messagesForModel: OpenRouterMessage[] = [
-      { role: "system", content: buildSystemPrompt(portfolioContext) },
+      { role: "system", content: systemPrompt },
       ...sanitizedHistory,
       { role: "user", content: normalizedMessage },
     ];
@@ -2439,6 +3208,28 @@ app.post("/api/v1/advisor/ask", async (req, res) => {
     let buffer = "";
     let fullResponse = "";
 
+    const processSseLine = (rawLine: string) => {
+      const trimmed = rawLine.trim();
+      if (!trimmed.startsWith("data:")) return;
+
+      const payloadChunk = trimmed.slice(5).trim();
+      if (!payloadChunk || payloadChunk === "[DONE]") return;
+
+      try {
+        const parsed = JSON.parse(payloadChunk) as {
+          choices?: Array<{ delta?: { content?: string } }>;
+        };
+
+        const token = parsed.choices?.[0]?.delta?.content;
+        if (typeof token === "string" && token.length > 0) {
+          fullResponse += token;
+          res.write(token);
+        }
+      } catch {
+        // Ignore malformed chunks and continue streaming.
+      }
+    };
+
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -2448,25 +3239,16 @@ app.post("/api/v1/advisor/ask", async (req, res) => {
       buffer = lines.pop() || "";
 
       for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith("data:")) continue;
+        processSseLine(line);
+      }
+    }
 
-        const payloadChunk = trimmed.slice(5).trim();
-        if (!payloadChunk || payloadChunk === "[DONE]") continue;
-
-        try {
-          const parsed = JSON.parse(payloadChunk) as {
-            choices?: Array<{ delta?: { content?: string } }>;
-          };
-
-          const token = parsed.choices?.[0]?.delta?.content;
-          if (typeof token === "string" && token.length > 0) {
-            fullResponse += token;
-            res.write(token);
-          }
-        } catch {
-          // Ignore malformed chunks and continue streaming.
-        }
+    // Flush any remaining decoder bytes and process the trailing partial SSE line.
+    buffer += decoder.decode();
+    if (buffer.trim().length > 0) {
+      const trailingLines = buffer.split("\n");
+      for (const line of trailingLines) {
+        processSseLine(line);
       }
     }
 
@@ -3160,6 +3942,1674 @@ app.put("/api/v1/user/risk-profile", async (req, res) => {
       error: {
         code: "RISK_PROFILE_INTERNAL_ERROR",
         message: "Failed to update risk profile.",
+        status: 500,
+      },
+    });
+  }
+});
+
+app.post("/api/v1/simulator/run", async (req, res) => {
+  try {
+    const {
+      userId,
+      baseNetWorth,
+      baseReturn,
+      baseVolatility,
+      years,
+      monthlySavings,
+      modifications,
+    } = req.body as {
+      userId?: string;
+      baseNetWorth?: unknown;
+      baseReturn?: unknown;
+      baseVolatility?: unknown;
+      years?: unknown;
+      monthlySavings?: unknown;
+      modifications?: unknown;
+    };
+
+    if (!userId || typeof userId !== "string") {
+      return res.status(400).json({
+        error: {
+          code: "INVALID_USER_ID",
+          message: "A valid userId is required.",
+          status: 400,
+        },
+      });
+    }
+
+    const { profile, lookupError } = await loadPhase4Profile(userId);
+    if (lookupError) {
+      return res.status(lookupError.status).json({
+        error: {
+          code: lookupError.code,
+          message: lookupError.message,
+          status: lookupError.status,
+        },
+      });
+    }
+
+    if (!profile) {
+      return res.status(404).json({
+        error: {
+          code: "PROFILE_NOT_FOUND",
+          message: "Profile not found for the provided userId.",
+          status: 404,
+        },
+      });
+    }
+
+    const parsedModifications = parseScenarioModifications(modifications);
+    const result = runScenarioSimulationPhase4({
+      baseNetWorth: Math.max(toFiniteNumber(baseNetWorth, 0), 0),
+      baseReturn: toFiniteNumber(baseReturn, 0.08),
+      baseVolatility: Math.max(toFiniteNumber(baseVolatility, 0.15), 0.01),
+      years: Math.max(1, Math.round(toFiniteNumber(years, 10))),
+      monthlySavings: Math.max(toFiniteNumber(monthlySavings, 0), 0),
+      modifications: parsedModifications,
+    });
+
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error("Simulator run endpoint error:", error);
+    return res.status(500).json({
+      error: {
+        code: "SIMULATOR_RUN_INTERNAL_ERROR",
+        message: "Failed to run simulation.",
+        status: 500,
+      },
+    });
+  }
+});
+
+app.get("/api/v1/simulator/scenarios", async (req, res) => {
+  try {
+    const userId = String(req.query.userId || "").trim();
+    if (!userId) {
+      return res.status(400).json({
+        error: {
+          code: "INVALID_USER_ID",
+          message: "Query parameter userId is required.",
+          status: 400,
+        },
+      });
+    }
+
+    const { profile, lookupError } = await loadPhase4Profile(userId);
+    if (lookupError) {
+      return res.status(lookupError.status).json({
+        error: {
+          code: lookupError.code,
+          message: lookupError.message,
+          status: lookupError.status,
+        },
+      });
+    }
+
+    if (!profile) {
+      return res.status(404).json({
+        error: {
+          code: "PROFILE_NOT_FOUND",
+          message: "Profile not found for the provided userId.",
+          status: 404,
+        },
+      });
+    }
+
+    const { data: scenarios, error: scenariosError } = await supabase
+      .from("scenarios")
+      .select("*")
+      .eq("user_id", userId)
+      .order("updated_at", { ascending: false });
+
+    if (scenariosError) {
+      return res.status(500).json({
+        error: {
+          code: "SCENARIOS_FETCH_FAILED",
+          message: "Failed to fetch saved scenarios.",
+          status: 500,
+        },
+      });
+    }
+
+    const scenarioIds = (scenarios || []).map((row) => row.id);
+    if (scenarioIds.length === 0) {
+      return res.status(200).json({ scenarios: [] });
+    }
+
+    const [{ data: scenarioAssets }, { data: scenarioEvents }] = await Promise.all([
+      supabase
+        .from("scenario_assets")
+        .select("*")
+        .in("scenario_id", scenarioIds),
+      supabase
+        .from("scenario_events")
+        .select("*")
+        .in("scenario_id", scenarioIds),
+    ]);
+
+    const payload = (scenarios || []).map((scenario) => ({
+      ...scenario,
+      modifications: (scenarioAssets || []).filter((row) => row.scenario_id === scenario.id),
+      events: (scenarioEvents || []).filter((row) => row.scenario_id === scenario.id),
+    }));
+
+    return res.status(200).json({ scenarios: payload });
+  } catch (error) {
+    console.error("Simulator scenarios endpoint error:", error);
+    return res.status(500).json({
+      error: {
+        code: "SCENARIOS_INTERNAL_ERROR",
+        message: "Failed to fetch scenarios.",
+        status: 500,
+      },
+    });
+  }
+});
+
+app.post("/api/v1/simulator/scenarios", async (req, res) => {
+  try {
+    const {
+      userId,
+      name,
+      description,
+      projection_years,
+      base_portfolio,
+      modifications,
+      events,
+    } = req.body as {
+      userId?: string;
+      name?: unknown;
+      description?: unknown;
+      projection_years?: unknown;
+      base_portfolio?: unknown;
+      modifications?: unknown;
+      events?: unknown;
+    };
+
+    if (!userId || typeof userId !== "string") {
+      return res.status(400).json({
+        error: {
+          code: "INVALID_USER_ID",
+          message: "A valid userId is required.",
+          status: 400,
+        },
+      });
+    }
+
+    const scenarioName = typeof name === "string" ? name.trim() : "";
+    if (!scenarioName) {
+      return res.status(400).json({
+        error: {
+          code: "INVALID_SCENARIO_NAME",
+          message: "Scenario name is required.",
+          status: 400,
+        },
+      });
+    }
+
+    const { profile, lookupError } = await loadPhase4Profile(userId);
+    if (lookupError) {
+      return res.status(lookupError.status).json({
+        error: {
+          code: lookupError.code,
+          message: lookupError.message,
+          status: lookupError.status,
+        },
+      });
+    }
+
+    if (!profile) {
+      return res.status(404).json({
+        error: {
+          code: "PROFILE_NOT_FOUND",
+          message: "Profile not found for the provided userId.",
+          status: 404,
+        },
+      });
+    }
+
+    const parsedModifications = parseScenarioModifications(modifications);
+    const parsedEvents = parseScenarioEvents(events);
+
+    const safeBasePortfolio =
+      base_portfolio && typeof base_portfolio === "object"
+        ? (base_portfolio as Record<string, unknown>)
+        : {};
+
+    const { data: scenario, error: insertScenarioError } = await supabase
+      .from("scenarios")
+      .insert({
+        user_id: userId,
+        name: scenarioName,
+        description: typeof description === "string" ? description : null,
+        projection_years: Math.max(1, Math.round(toFiniteNumber(projection_years, 10))),
+        base_portfolio: {
+          ...safeBasePortfolio,
+          saved_modifications: parsedModifications,
+          saved_events: parsedEvents,
+        },
+      })
+      .select("*")
+      .single();
+
+    if (insertScenarioError || !scenario) {
+      return res.status(500).json({
+        error: {
+          code: "SCENARIO_CREATE_FAILED",
+          message: "Failed to create scenario.",
+          status: 500,
+        },
+      });
+    }
+
+    const scenarioAssetRows = parsedModifications
+      .filter((mod) => mod.type !== "one_time_event")
+      .map((mod) => ({
+        scenario_id: scenario.id,
+        asset_name: mod.asset?.name || "Custom Asset",
+        asset_ticker: mod.asset?.ticker || null,
+        asset_class: mod.asset?.class || null,
+        operation:
+          mod.type === "add_asset"
+            ? "add"
+            : mod.type === "remove_asset"
+              ? "remove"
+              : mod.type === "change_allocation"
+                ? "update_allocation"
+                : "update_value",
+        quantity_delta: Number.isFinite(mod.asset?.quantity || NaN)
+          ? mod.asset?.quantity
+          : null,
+        value_php_delta: Number.isFinite(mod.asset?.value || NaN)
+          ? mod.asset?.value
+          : null,
+        target_allocation_pct:
+          Number.isFinite(mod.newAllocationPct || NaN)
+            ? mod.newAllocationPct
+            : null,
+        metadata: {
+          savingsRateChange: mod.savingsRateChange ?? null,
+        },
+      }));
+
+    const scenarioEventRows = [
+      ...parsedEvents,
+      ...parsedModifications
+        .filter((mod) => mod.type === "one_time_event" && mod.event)
+        .map((mod) => mod.event as ScenarioEventInput),
+    ].map((event) => ({
+      scenario_id: scenario.id,
+      name: event.name,
+      event_type: event.type,
+      amount_php: event.amount,
+      event_date: new Date(event.date).toISOString().slice(0, 10),
+    }));
+
+    if (scenarioAssetRows.length > 0) {
+      await supabase.from("scenario_assets").insert(scenarioAssetRows);
+    }
+
+    if (scenarioEventRows.length > 0) {
+      await supabase.from("scenario_events").insert(scenarioEventRows);
+    }
+
+    return res.status(201).json({
+      scenario: {
+        ...scenario,
+        modifications: scenarioAssetRows,
+        events: scenarioEventRows,
+      },
+    });
+  } catch (error) {
+    console.error("Create scenario endpoint error:", error);
+    return res.status(500).json({
+      error: {
+        code: "SCENARIO_CREATE_INTERNAL_ERROR",
+        message: "Failed to create scenario.",
+        status: 500,
+      },
+    });
+  }
+});
+
+app.delete("/api/v1/simulator/scenarios/:scenarioId", async (req, res) => {
+  try {
+    const userId = String(req.query.userId || "").trim();
+    const scenarioId = String(req.params.scenarioId || "").trim();
+
+    if (!userId || !scenarioId) {
+      return res.status(400).json({
+        error: {
+          code: "INVALID_REQUEST",
+          message: "userId and scenarioId are required.",
+          status: 400,
+        },
+      });
+    }
+
+    const { profile, lookupError } = await loadPhase4Profile(userId);
+    if (lookupError) {
+      return res.status(lookupError.status).json({
+        error: {
+          code: lookupError.code,
+          message: lookupError.message,
+          status: lookupError.status,
+        },
+      });
+    }
+
+    if (!profile) {
+      return res.status(404).json({
+        error: {
+          code: "PROFILE_NOT_FOUND",
+          message: "Profile not found for the provided userId.",
+          status: 404,
+        },
+      });
+    }
+
+    const { error } = await supabase
+      .from("scenarios")
+      .delete()
+      .eq("id", scenarioId)
+      .eq("user_id", userId);
+
+    if (error) {
+      return res.status(500).json({
+        error: {
+          code: "SCENARIO_DELETE_FAILED",
+          message: "Failed to delete scenario.",
+          status: 500,
+        },
+      });
+    }
+
+    return res.status(200).json({ success: true });
+  } catch (error) {
+    console.error("Delete scenario endpoint error:", error);
+    return res.status(500).json({
+      error: {
+        code: "SCENARIO_DELETE_INTERNAL_ERROR",
+        message: "Failed to delete scenario.",
+        status: 500,
+      },
+    });
+  }
+});
+
+app.get("/api/v1/alerts", async (req, res) => {
+  try {
+    const userId = String(req.query.userId || "").trim();
+    if (!userId) {
+      return res.status(400).json({
+        error: {
+          code: "INVALID_USER_ID",
+          message: "Query parameter userId is required.",
+          status: 400,
+        },
+      });
+    }
+
+    const { profile, lookupError } = await loadPhase4Profile(userId);
+    if (lookupError) {
+      return res.status(lookupError.status).json({
+        error: {
+          code: lookupError.code,
+          message: lookupError.message,
+          status: lookupError.status,
+        },
+      });
+    }
+
+    if (!profile) {
+      return res.status(404).json({
+        error: {
+          code: "PROFILE_NOT_FOUND",
+          message: "Profile not found for the provided userId.",
+          status: 404,
+        },
+      });
+    }
+
+    const { data, error } = await supabase
+      .from("alerts")
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      return res.status(500).json({
+        error: {
+          code: "ALERTS_FETCH_FAILED",
+          message: "Failed to fetch alerts.",
+          status: 500,
+        },
+      });
+    }
+
+    return res.status(200).json({ alerts: data || [] });
+  } catch (error) {
+    console.error("Alerts list endpoint error:", error);
+    return res.status(500).json({
+      error: {
+        code: "ALERTS_INTERNAL_ERROR",
+        message: "Failed to fetch alerts.",
+        status: 500,
+      },
+    });
+  }
+});
+
+app.post("/api/v1/alerts", async (req, res) => {
+  try {
+    const {
+      userId,
+      alert_type,
+      asset_ticker,
+      condition,
+      threshold,
+    } = req.body as {
+      userId?: string;
+      alert_type?: unknown;
+      asset_ticker?: unknown;
+      condition?: unknown;
+      threshold?: unknown;
+    };
+
+    if (!userId || typeof userId !== "string") {
+      return res.status(400).json({
+        error: {
+          code: "INVALID_USER_ID",
+          message: "A valid userId is required.",
+          status: 400,
+        },
+      });
+    }
+
+    const normalizedType = normalizeAlertType(alert_type);
+    const normalizedCondition = normalizeAlertCondition(condition);
+    const numericThreshold = toFiniteNumber(threshold, NaN);
+
+    if (!normalizedType || !normalizedCondition || !Number.isFinite(numericThreshold) || numericThreshold <= 0) {
+      return res.status(400).json({
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "alert_type, condition, and a positive threshold are required.",
+          status: 400,
+        },
+      });
+    }
+
+    const { profile, lookupError } = await loadPhase4Profile(userId);
+    if (lookupError) {
+      return res.status(lookupError.status).json({
+        error: {
+          code: lookupError.code,
+          message: lookupError.message,
+          status: lookupError.status,
+        },
+      });
+    }
+
+    if (!profile) {
+      return res.status(404).json({
+        error: {
+          code: "PROFILE_NOT_FOUND",
+          message: "Profile not found for the provided userId.",
+          status: 404,
+        },
+      });
+    }
+
+    const { count, error: countError } = await supabase
+      .from("alerts")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .eq("is_active", true);
+
+    if (countError) {
+      return res.status(500).json({
+        error: {
+          code: "ALERT_LIMIT_CHECK_FAILED",
+          message: "Failed to validate alert limits.",
+          status: 500,
+        },
+      });
+    }
+
+    const limit = profile.subscription_tier === "pro" ? MAX_ALERTS_PRO : MAX_ALERTS_FREE;
+    if ((count || 0) >= limit) {
+      return res.status(400).json({
+        error: {
+          code: "LIMIT_REACHED",
+          message: `Maximum ${limit} active alerts allowed for your plan.`,
+          status: 400,
+        },
+      });
+    }
+
+    const { data, error } = await supabase
+      .from("alerts")
+      .insert({
+        user_id: userId,
+        alert_type: normalizedType,
+        asset_ticker: typeof asset_ticker === "string" && asset_ticker.trim().length > 0
+          ? asset_ticker.trim().toUpperCase()
+          : null,
+        condition: normalizedCondition,
+        threshold: numericThreshold,
+      })
+      .select("*")
+      .single();
+
+    if (error || !data) {
+      return res.status(500).json({
+        error: {
+          code: "ALERT_CREATE_FAILED",
+          message: "Failed to create alert.",
+          status: 500,
+        },
+      });
+    }
+
+    return res.status(201).json({ alert: data });
+  } catch (error) {
+    console.error("Create alert endpoint error:", error);
+    return res.status(500).json({
+      error: {
+        code: "ALERT_CREATE_INTERNAL_ERROR",
+        message: "Failed to create alert.",
+        status: 500,
+      },
+    });
+  }
+});
+
+app.put("/api/v1/alerts/:alertId", async (req, res) => {
+  try {
+    const alertId = String(req.params.alertId || "").trim();
+    const { userId, is_active, threshold, condition } = req.body as {
+      userId?: string;
+      is_active?: unknown;
+      threshold?: unknown;
+      condition?: unknown;
+    };
+
+    if (!userId || typeof userId !== "string" || !alertId) {
+      return res.status(400).json({
+        error: {
+          code: "INVALID_REQUEST",
+          message: "A valid userId and alertId are required.",
+          status: 400,
+        },
+      });
+    }
+
+    const updates: Record<string, unknown> = {
+      updated_at: new Date().toISOString(),
+    };
+
+    if (typeof is_active === "boolean") {
+      updates.is_active = is_active;
+    }
+
+    if (threshold !== undefined) {
+      const parsedThreshold = toFiniteNumber(threshold, NaN);
+      if (!Number.isFinite(parsedThreshold) || parsedThreshold <= 0) {
+        return res.status(400).json({
+          error: {
+            code: "INVALID_THRESHOLD",
+            message: "threshold must be a positive number.",
+            status: 400,
+          },
+        });
+      }
+      updates.threshold = parsedThreshold;
+    }
+
+    if (condition !== undefined) {
+      const normalizedCondition = normalizeAlertCondition(condition);
+      if (!normalizedCondition) {
+        return res.status(400).json({
+          error: {
+            code: "INVALID_CONDITION",
+            message: "condition must be above, below, or change_pct.",
+            status: 400,
+          },
+        });
+      }
+      updates.condition = normalizedCondition;
+    }
+
+    const { data, error } = await supabase
+      .from("alerts")
+      .update(updates)
+      .eq("id", alertId)
+      .eq("user_id", userId)
+      .select("*")
+      .single();
+
+    if (error || !data) {
+      return res.status(500).json({
+        error: {
+          code: "ALERT_UPDATE_FAILED",
+          message: "Failed to update alert.",
+          status: 500,
+        },
+      });
+    }
+
+    return res.status(200).json({ alert: data });
+  } catch (error) {
+    console.error("Update alert endpoint error:", error);
+    return res.status(500).json({
+      error: {
+        code: "ALERT_UPDATE_INTERNAL_ERROR",
+        message: "Failed to update alert.",
+        status: 500,
+      },
+    });
+  }
+});
+
+app.delete("/api/v1/alerts/:alertId", async (req, res) => {
+  try {
+    const userId = String(req.query.userId || "").trim();
+    const alertId = String(req.params.alertId || "").trim();
+
+    if (!userId || !alertId) {
+      return res.status(400).json({
+        error: {
+          code: "INVALID_REQUEST",
+          message: "userId and alertId are required.",
+          status: 400,
+        },
+      });
+    }
+
+    const { error } = await supabase
+      .from("alerts")
+      .delete()
+      .eq("id", alertId)
+      .eq("user_id", userId);
+
+    if (error) {
+      return res.status(500).json({
+        error: {
+          code: "ALERT_DELETE_FAILED",
+          message: "Failed to delete alert.",
+          status: 500,
+        },
+      });
+    }
+
+    return res.status(200).json({ success: true });
+  } catch (error) {
+    console.error("Delete alert endpoint error:", error);
+    return res.status(500).json({
+      error: {
+        code: "ALERT_DELETE_INTERNAL_ERROR",
+        message: "Failed to delete alert.",
+        status: 500,
+      },
+    });
+  }
+});
+
+app.get("/api/v1/alerts/history", async (req, res) => {
+  try {
+    const userId = String(req.query.userId || "").trim();
+    const limit = Math.min(200, Math.max(1, Number(req.query.limit || 50)));
+
+    if (!userId) {
+      return res.status(400).json({
+        error: {
+          code: "INVALID_USER_ID",
+          message: "Query parameter userId is required.",
+          status: 400,
+        },
+      });
+    }
+
+    const { data, error } = await supabase
+      .from("alert_history")
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      return res.status(500).json({
+        error: {
+          code: "ALERT_HISTORY_FETCH_FAILED",
+          message: "Failed to fetch alert history.",
+          status: 500,
+        },
+      });
+    }
+
+    return res.status(200).json({ history: data || [] });
+  } catch (error) {
+    console.error("Alert history endpoint error:", error);
+    return res.status(500).json({
+      error: {
+        code: "ALERT_HISTORY_INTERNAL_ERROR",
+        message: "Failed to fetch alert history.",
+        status: 500,
+      },
+    });
+  }
+});
+
+app.post("/api/v1/alerts/subscribe", async (req, res) => {
+  try {
+    const { userId, endpoint, p256dh, auth_key } = req.body as {
+      userId?: string;
+      endpoint?: unknown;
+      p256dh?: unknown;
+      auth_key?: unknown;
+    };
+
+    if (
+      !userId ||
+      typeof userId !== "string" ||
+      typeof endpoint !== "string" ||
+      typeof p256dh !== "string" ||
+      typeof auth_key !== "string"
+    ) {
+      return res.status(400).json({
+        error: {
+          code: "INVALID_SUBSCRIPTION_PAYLOAD",
+          message: "userId, endpoint, p256dh, and auth_key are required.",
+          status: 400,
+        },
+      });
+    }
+
+    const { error } = await supabase
+      .from("push_subscriptions")
+      .upsert(
+        {
+          user_id: userId,
+          endpoint,
+          p256dh,
+          auth_key,
+        },
+        { onConflict: "user_id,endpoint" }
+      );
+
+    if (error) {
+      return res.status(500).json({
+        error: {
+          code: "PUSH_SUBSCRIPTION_SAVE_FAILED",
+          message: "Failed to save push subscription.",
+          status: 500,
+        },
+      });
+    }
+
+    return res.status(200).json({ success: true });
+  } catch (error) {
+    console.error("Push subscribe endpoint error:", error);
+    return res.status(500).json({
+      error: {
+        code: "PUSH_SUBSCRIPTION_INTERNAL_ERROR",
+        message: "Failed to save push subscription.",
+        status: 500,
+      },
+    });
+  }
+});
+
+app.post("/api/v1/alerts/check", async (req, res) => {
+  try {
+    const { userId, previousPortfolioValue } = req.body as {
+      userId?: string;
+      previousPortfolioValue?: unknown;
+    };
+
+    if (!userId || typeof userId !== "string") {
+      return res.status(400).json({
+        error: {
+          code: "INVALID_USER_ID",
+          message: "A valid userId is required.",
+          status: 400,
+        },
+      });
+    }
+
+    const { profile, lookupError } = await loadPhase4Profile(userId);
+    if (lookupError) {
+      return res.status(lookupError.status).json({
+        error: {
+          code: lookupError.code,
+          message: lookupError.message,
+          status: lookupError.status,
+        },
+      });
+    }
+
+    if (!profile) {
+      return res.status(404).json({
+        error: {
+          code: "PROFILE_NOT_FOUND",
+          message: "Profile not found for the provided userId.",
+          status: 404,
+        },
+      });
+    }
+
+    const { data: alerts, error: alertsError } = await supabase
+      .from("alerts")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("is_active", true);
+
+    if (alertsError) {
+      return res.status(500).json({
+        error: {
+          code: "ALERT_CHECK_FETCH_FAILED",
+          message: "Failed to fetch active alerts.",
+          status: 500,
+        },
+      });
+    }
+
+    if (!alerts || alerts.length === 0) {
+      return res.status(200).json({
+        triggeredCount: 0,
+        intervalMs: ALERT_CHECK_INTERVAL,
+        checks: [],
+      });
+    }
+
+    const tickerSet = new Set<string>(["PSEI"]);
+    for (const alert of alerts as AlertRow[]) {
+      if (alert.asset_ticker) tickerSet.add(alert.asset_ticker.toUpperCase());
+    }
+
+    const { data: pricesData } = await supabase
+      .from("price_cache")
+      .select("ticker, price_php")
+      .in("ticker", Array.from(tickerSet));
+
+    const { data: assetRows } = await supabase
+      .from("assets")
+      .select("current_value_php")
+      .eq("user_id", userId);
+
+    const portfolioValue = (assetRows || []).reduce(
+      (sum, row) => sum + Number(row.current_value_php || 0),
+      0
+    );
+    const previousValue = Number.isFinite(Number(previousPortfolioValue))
+      ? Number(previousPortfolioValue)
+      : portfolioValue;
+
+    const checks = checkAlertConditions(
+      alerts as AlertRow[],
+      (pricesData || []) as Array<{ ticker: string; price_php: number }>,
+      portfolioValue,
+      previousValue
+    );
+
+    const triggered = checks.filter((row) => row.triggered);
+    if (triggered.length === 0) {
+      return res.status(200).json({
+        triggeredCount: 0,
+        intervalMs: ALERT_CHECK_INTERVAL,
+        checks,
+      });
+    }
+
+    await supabase.from("alert_history").insert(
+      triggered.map((entry) => ({
+        alert_id: entry.alert.id,
+        user_id: userId,
+        triggered_value: entry.currentValue,
+        message: entry.message,
+      }))
+    );
+
+    await supabase.from("notifications").insert(
+      triggered.map((entry) => ({
+        user_id: userId,
+        alert_id: entry.alert.id,
+        title: "Alert triggered",
+        body: entry.message,
+      }))
+    );
+
+    await supabase
+      .from("alerts")
+      .update({ last_triggered_at: new Date().toISOString() })
+      .in("id", triggered.map((entry) => entry.alert.id));
+
+    const firstMessage = triggered[0]?.message || "Your alert has been triggered.";
+    const pushCount = await sendPushNotificationsForUser(userId, {
+      title: "AETHER alert triggered",
+      body:
+        triggered.length > 1
+          ? `${firstMessage} (+${triggered.length - 1} more)`
+          : firstMessage,
+      url: "/dashboard/alerts",
+    });
+
+    const emailSent = await sendTriggeredAlertEmail(profile, triggered);
+
+    return res.status(200).json({
+      triggeredCount: triggered.length,
+      pushSentCount: pushCount,
+      emailSent,
+      intervalMs: ALERT_CHECK_INTERVAL,
+      checks,
+    });
+  } catch (error) {
+    console.error("Alert checker endpoint error:", error);
+    return res.status(500).json({
+      error: {
+        code: "ALERT_CHECK_INTERNAL_ERROR",
+        message: "Failed to run alert checks.",
+        status: 500,
+      },
+    });
+  }
+});
+
+app.get("/api/v1/notifications", async (req, res) => {
+  try {
+    const userId = String(req.query.userId || "").trim();
+    const limit = Math.min(200, Math.max(1, Number(req.query.limit || 50)));
+
+    if (!userId) {
+      return res.status(400).json({
+        error: {
+          code: "INVALID_USER_ID",
+          message: "Query parameter userId is required.",
+          status: 400,
+        },
+      });
+    }
+
+    const { data, error } = await supabase
+      .from("notifications")
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      return res.status(500).json({
+        error: {
+          code: "NOTIFICATIONS_FETCH_FAILED",
+          message: "Failed to fetch notifications.",
+          status: 500,
+        },
+      });
+    }
+
+    return res.status(200).json({ notifications: data || [] });
+  } catch (error) {
+    console.error("Notifications endpoint error:", error);
+    return res.status(500).json({
+      error: {
+        code: "NOTIFICATIONS_INTERNAL_ERROR",
+        message: "Failed to fetch notifications.",
+        status: 500,
+      },
+    });
+  }
+});
+
+app.put("/api/v1/notifications/read", async (req, res) => {
+  try {
+    const { userId, notificationId } = req.body as {
+      userId?: string;
+      notificationId?: unknown;
+    };
+
+    if (!userId || typeof userId !== "string") {
+      return res.status(400).json({
+        error: {
+          code: "INVALID_USER_ID",
+          message: "A valid userId is required.",
+          status: 400,
+        },
+      });
+    }
+
+    let query = supabase
+      .from("notifications")
+      .update({ is_read: true })
+      .eq("user_id", userId);
+
+    if (typeof notificationId === "string" && notificationId.trim().length > 0) {
+      query = query.eq("id", notificationId.trim());
+    }
+
+    const { error } = await query;
+    if (error) {
+      return res.status(500).json({
+        error: {
+          code: "NOTIFICATIONS_UPDATE_FAILED",
+          message: "Failed to update notifications.",
+          status: 500,
+        },
+      });
+    }
+
+    return res.status(200).json({ success: true });
+  } catch (error) {
+    console.error("Notifications update endpoint error:", error);
+    return res.status(500).json({
+      error: {
+        code: "NOTIFICATIONS_UPDATE_INTERNAL_ERROR",
+        message: "Failed to update notifications.",
+        status: 500,
+      },
+    });
+  }
+});
+
+app.post("/api/v1/digest/send-test", async (req, res) => {
+  try {
+    const { userId } = req.body as { userId?: string };
+    if (!userId || typeof userId !== "string") {
+      return res.status(400).json({
+        error: {
+          code: "INVALID_USER_ID",
+          message: "A valid userId is required.",
+          status: 400,
+        },
+      });
+    }
+
+    if (!resendClient) {
+      return res.status(503).json({
+        error: {
+          code: "RESEND_NOT_CONFIGURED",
+          message: "RESEND_API_KEY is not configured.",
+          status: 503,
+        },
+      });
+    }
+
+    const { profile, lookupError } = await loadPhase4Profile(userId);
+    if (lookupError) {
+      return res.status(lookupError.status).json({
+        error: {
+          code: lookupError.code,
+          message: lookupError.message,
+          status: lookupError.status,
+        },
+      });
+    }
+
+    if (!profile || !profile.email) {
+      return res.status(404).json({
+        error: {
+          code: "PROFILE_EMAIL_NOT_FOUND",
+          message: "Profile email is required for digest sending.",
+          status: 404,
+        },
+      });
+    }
+
+    const { data: assetsData } = await supabase
+      .from("assets")
+      .select("current_value_php")
+      .eq("user_id", userId);
+    const netWorth = (assetsData || []).reduce(
+      (sum, row) => sum + Number(row.current_value_php || 0),
+      0
+    );
+
+    await resendClient.emails.send({
+      from: RESEND_FROM_EMAIL,
+      to: profile.email,
+      subject: "AETHER Weekly Digest (Test)",
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; padding: 24px; color: #111827;">
+          <h2 style="margin: 0 0 12px;">AETHER Weekly Digest</h2>
+          <p style="margin: 0 0 16px;">Hi ${profile.full_name || "there"}, this is a test digest for your account.</p>
+          <p style="margin: 0 0 16px;">Estimated portfolio value: <strong>PHP ${netWorth.toLocaleString("en-PH", { maximumFractionDigits: 2 })}</strong></p>
+          <p style="margin: 0;">You can adjust digest preferences from your dashboard settings.</p>
+        </div>
+      `,
+    });
+
+    return res.status(200).json({ success: true });
+  } catch (error) {
+    console.error("Digest send-test endpoint error:", error);
+    return res.status(500).json({
+      error: {
+        code: "DIGEST_SEND_INTERNAL_ERROR",
+        message: "Failed to send test digest.",
+        status: 500,
+      },
+    });
+  }
+});
+
+app.get("/api/v1/rag/corpus", async (req, res) => {
+  try {
+    const userId = String(req.query.userId || "").trim();
+    if (!userId) {
+      return res.status(400).json({
+        error: {
+          code: "INVALID_USER_ID",
+          message: "Query parameter userId is required.",
+          status: 400,
+        },
+      });
+    }
+
+    const { profile, lookupError } = await loadPhase4Profile(userId);
+    if (lookupError) {
+      return res.status(lookupError.status).json({
+        error: {
+          code: lookupError.code,
+          message: lookupError.message,
+          status: lookupError.status,
+        },
+      });
+    }
+
+    if (!profile) {
+      return res.status(404).json({
+        error: {
+          code: "PROFILE_NOT_FOUND",
+          message: "Profile not found for the provided userId.",
+          status: 404,
+        },
+      });
+    }
+
+    const limit = Math.min(200, Math.max(1, Number(req.query.limit || 50)));
+    const offset = Math.max(0, Number(req.query.offset || 0));
+    const rawSourceType = req.query.source_type;
+    const sourceType = normalizeRagSourceType(rawSourceType);
+
+    if (rawSourceType !== undefined && !sourceType) {
+      return res.status(400).json({
+        error: {
+          code: "INVALID_SOURCE_TYPE",
+          message: "source_type is invalid.",
+          status: 400,
+        },
+      });
+    }
+
+    let query = supabase
+      .from("market_context")
+      .select(
+        "id, source_type, title, source_url, published_date, tags, chunk_index, parent_doc_id, token_count, created_at",
+        { count: "exact" }
+      )
+      .order("published_date", { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (sourceType) {
+      query = query.eq("source_type", sourceType);
+    }
+
+    const { data, error, count } = await query;
+    if (error) {
+      return res.status(500).json({
+        error: {
+          code: "RAG_CORPUS_FETCH_FAILED",
+          message: "Failed to fetch RAG corpus.",
+          status: 500,
+        },
+      });
+    }
+
+    return res.status(200).json({
+      documents: data || [],
+      pagination: {
+        limit,
+        offset,
+        total: count || 0,
+      },
+    });
+  } catch (error) {
+    console.error("RAG corpus endpoint error:", error);
+    return res.status(500).json({
+      error: {
+        code: "RAG_CORPUS_INTERNAL_ERROR",
+        message: "Failed to fetch RAG corpus.",
+        status: 500,
+      },
+    });
+  }
+});
+
+app.post("/api/v1/rag/search", async (req, res) => {
+  try {
+    const { userId, query, topK, sourceTypes, tags } = req.body as {
+      userId?: string;
+      query?: unknown;
+      topK?: unknown;
+      sourceTypes?: unknown;
+      tags?: unknown;
+    };
+
+    if (!userId || typeof userId !== "string") {
+      return res.status(400).json({
+        error: {
+          code: "INVALID_USER_ID",
+          message: "A valid userId is required.",
+          status: 400,
+        },
+      });
+    }
+
+    const prompt = typeof query === "string" ? query.trim() : "";
+    if (!prompt) {
+      return res.status(400).json({
+        error: {
+          code: "INVALID_QUERY",
+          message: "query is required.",
+          status: 400,
+        },
+      });
+    }
+
+    const { profile, lookupError } = await loadPhase4Profile(userId);
+    if (lookupError) {
+      return res.status(lookupError.status).json({
+        error: {
+          code: lookupError.code,
+          message: lookupError.message,
+          status: lookupError.status,
+        },
+      });
+    }
+
+    if (!profile) {
+      return res.status(404).json({
+        error: {
+          code: "PROFILE_NOT_FOUND",
+          message: "Profile not found for the provided userId.",
+          status: 404,
+        },
+      });
+    }
+
+    let normalizedSourceTypes: RagSourceType[] = [];
+    if (sourceTypes !== undefined) {
+      if (!Array.isArray(sourceTypes)) {
+        return res.status(400).json({
+          error: {
+            code: "INVALID_SOURCE_TYPES",
+            message: "sourceTypes must be an array.",
+            status: 400,
+          },
+        });
+      }
+
+      for (const entry of sourceTypes) {
+        const normalized = normalizeRagSourceType(entry);
+        if (!normalized) {
+          return res.status(400).json({
+            error: {
+              code: "INVALID_SOURCE_TYPE",
+              message: "One or more sourceTypes values are invalid.",
+              status: 400,
+            },
+          });
+        }
+        if (!normalizedSourceTypes.includes(normalized)) {
+          normalizedSourceTypes.push(normalized);
+        }
+      }
+    }
+
+    const results = await searchRagContext({
+      supabase,
+      query: prompt,
+      topK: Number(topK || RAG_TOP_K),
+      similarityThreshold: RAG_SIMILARITY_THRESHOLD,
+      sourceTypes: normalizedSourceTypes,
+      tags: normalizeRagTags(tags),
+    });
+
+    return res.status(200).json({
+      results,
+      total: results.length,
+    });
+  } catch (error) {
+    console.error("RAG search endpoint error:", error);
+    return res.status(500).json({
+      error: {
+        code: "RAG_SEARCH_INTERNAL_ERROR",
+        message: "Failed to search RAG corpus.",
+        status: 500,
+      },
+    });
+  }
+});
+
+app.post("/api/v1/rag/ingest", async (req, res) => {
+  try {
+    const { userId, title, content, source_type, source_url, published_date, tags } = req.body as {
+      userId?: string;
+      title?: unknown;
+      content?: unknown;
+      source_type?: unknown;
+      source_url?: unknown;
+      published_date?: unknown;
+      tags?: unknown;
+    };
+
+    if (!userId || typeof userId !== "string") {
+      return res.status(400).json({
+        error: {
+          code: "INVALID_USER_ID",
+          message: "A valid userId is required.",
+          status: 400,
+        },
+      });
+    }
+
+    const { profile, lookupError } = await loadPhase4Profile(userId);
+    if (lookupError) {
+      return res.status(lookupError.status).json({
+        error: {
+          code: lookupError.code,
+          message: lookupError.message,
+          status: lookupError.status,
+        },
+      });
+    }
+
+    if (!profile) {
+      return res.status(404).json({
+        error: {
+          code: "PROFILE_NOT_FOUND",
+          message: "Profile not found for the provided userId.",
+          status: 404,
+        },
+      });
+    }
+
+    if (!isRagIngestAllowed(userId, profile)) {
+      return res.status(403).json({
+        error: {
+          code: "FORBIDDEN",
+          message: "RAG ingestion requires Pro tier or admin access.",
+          status: 403,
+        },
+      });
+    }
+
+    const normalizedSourceType = normalizeRagSourceType(source_type);
+    if (!normalizedSourceType) {
+      return res.status(400).json({
+        error: {
+          code: "INVALID_SOURCE_TYPE",
+          message: "source_type is invalid.",
+          status: 400,
+        },
+      });
+    }
+
+    const safeTitle = typeof title === "string" ? title.trim() : "";
+    const safeContent = typeof content === "string" ? content.trim() : "";
+
+    if (safeTitle.length < 3) {
+      return res.status(400).json({
+        error: {
+          code: "INVALID_TITLE",
+          message: "title must be at least 3 characters.",
+          status: 400,
+        },
+      });
+    }
+
+    if (safeContent.length < 20) {
+      return res.status(400).json({
+        error: {
+          code: "INVALID_CONTENT",
+          message: "content must be at least 20 characters.",
+          status: 400,
+        },
+      });
+    }
+
+    let safeSourceUrl: string | null = null;
+    if (typeof source_url === "string" && source_url.trim().length > 0) {
+      try {
+        safeSourceUrl = new URL(source_url.trim()).toString();
+      } catch {
+        return res.status(400).json({
+          error: {
+            code: "INVALID_SOURCE_URL",
+            message: "source_url must be a valid URL.",
+            status: 400,
+          },
+        });
+      }
+    }
+
+    const safePublishedDate =
+      typeof published_date === "string" && published_date.trim().length > 0
+        ? published_date
+        : new Date().toISOString();
+
+    const ingestRequest: RagIngestRequest = {
+      title: safeTitle,
+      content: safeContent,
+      source_type: normalizedSourceType,
+      source_url: safeSourceUrl,
+      published_date: safePublishedDate,
+      tags: normalizeRagTags(tags),
+    };
+
+    const result = await ingestRagDocument({
+      supabase,
+      request: ingestRequest,
+      chunkSizeTokens: RAG_CHUNK_SIZE,
+      overlapTokens: RAG_CHUNK_OVERLAP,
+    });
+
+    return res.status(201).json({
+      success: true,
+      chunks: result.chunks,
+      replaced: result.replaced,
+      parentDocId: result.parentDocId,
+      documentKey: result.documentKey,
+    });
+  } catch (error) {
+    console.error("RAG ingest endpoint error:", error);
+    return res.status(500).json({
+      error: {
+        code: "RAG_INGEST_INTERNAL_ERROR",
+        message: error instanceof Error ? error.message : "Failed to ingest document.",
+        status: 500,
+      },
+    });
+  }
+});
+
+app.post("/api/v1/pipeline/price-refresh", async (req, res) => {
+  let runId: string | null = null;
+  try {
+    const { userId } = req.body as { userId?: string };
+    if (!userId || typeof userId !== "string") {
+      return res.status(400).json({
+        error: {
+          code: "INVALID_USER_ID",
+          message: "A valid userId is required.",
+          status: 400,
+        },
+      });
+    }
+
+    const { profile, lookupError } = await loadPhase4Profile(userId);
+    if (lookupError) {
+      return res.status(lookupError.status).json({
+        error: {
+          code: lookupError.code,
+          message: lookupError.message,
+          status: lookupError.status,
+        },
+      });
+    }
+
+    if (!profile) {
+      return res.status(404).json({
+        error: {
+          code: "PROFILE_NOT_FOUND",
+          message: "Profile not found for the provided userId.",
+          status: 404,
+        },
+      });
+    }
+
+    if (!isRagIngestAllowed(userId, profile)) {
+      return res.status(403).json({
+        error: {
+          code: "FORBIDDEN",
+          message: "Price refresh pipeline requires Pro tier or admin access.",
+          status: 403,
+        },
+      });
+    }
+
+    runId = await beginPipelineRunLog("price_refresh", {
+      trigger: "manual",
+      initiated_by: userId,
+    });
+
+    const result = await runPriceRefreshPipeline();
+
+    await finishPipelineRunLog(runId, {
+      status: "success",
+      recordsProcessed: result.processed,
+    });
+
+    return res.status(200).json({
+      success: true,
+      ...result,
+    });
+  } catch (error) {
+    console.error("Price refresh pipeline endpoint error:", error);
+    await finishPipelineRunLog(runId, {
+      status: "failed",
+      recordsProcessed: 0,
+      errorMessage: error instanceof Error ? error.message : "Price refresh failed",
+    });
+
+    return res.status(500).json({
+      error: {
+        code: "PRICE_REFRESH_INTERNAL_ERROR",
+        message: "Failed to refresh prices.",
+        status: 500,
+      },
+    });
+  }
+});
+
+app.post("/api/v1/pipeline/cpi-update", async (req, res) => {
+  let runId: string | null = null;
+  try {
+    const { userId, cpi } = req.body as { userId?: string; cpi?: unknown };
+    if (!userId || typeof userId !== "string") {
+      return res.status(400).json({
+        error: {
+          code: "INVALID_USER_ID",
+          message: "A valid userId is required.",
+          status: 400,
+        },
+      });
+    }
+
+    const { profile, lookupError } = await loadPhase4Profile(userId);
+    if (lookupError) {
+      return res.status(lookupError.status).json({
+        error: {
+          code: lookupError.code,
+          message: lookupError.message,
+          status: lookupError.status,
+        },
+      });
+    }
+
+    if (!profile) {
+      return res.status(404).json({
+        error: {
+          code: "PROFILE_NOT_FOUND",
+          message: "Profile not found for the provided userId.",
+          status: 404,
+        },
+      });
+    }
+
+    if (!isRagIngestAllowed(userId, profile)) {
+      return res.status(403).json({
+        error: {
+          code: "FORBIDDEN",
+          message: "CPI pipeline update requires Pro tier or admin access.",
+          status: 403,
+        },
+      });
+    }
+
+    const cpiValue = Number(cpi);
+    if (!Number.isFinite(cpiValue) || cpiValue < -10 || cpiValue > 50) {
+      return res.status(400).json({
+        error: {
+          code: "INVALID_CPI",
+          message: "cpi must be a number between -10 and 50.",
+          status: 400,
+        },
+      });
+    }
+
+    runId = await beginPipelineRunLog("cpi_update", {
+      trigger: "manual",
+      initiated_by: userId,
+      cpi: cpiValue,
+    });
+
+    const { error } = await supabase.from("price_cache").upsert(
+      {
+        ticker: "PH_CPI",
+        price_php: cpiValue,
+        source: "manual_cpi_update",
+        fetched_at: new Date().toISOString(),
+      },
+      { onConflict: "ticker" }
+    );
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    await finishPipelineRunLog(runId, {
+      status: "success",
+      recordsProcessed: 1,
+    });
+
+    return res.status(200).json({
+      success: true,
+      ticker: "PH_CPI",
+      cpi: cpiValue,
+    });
+  } catch (error) {
+    console.error("CPI update pipeline endpoint error:", error);
+    await finishPipelineRunLog(runId, {
+      status: "failed",
+      recordsProcessed: 0,
+      errorMessage: error instanceof Error ? error.message : "CPI update failed",
+    });
+
+    return res.status(500).json({
+      error: {
+        code: "CPI_UPDATE_INTERNAL_ERROR",
+        message: "Failed to update CPI value.",
         status: 500,
       },
     });

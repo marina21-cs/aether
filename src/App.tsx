@@ -17,6 +17,8 @@ import { GlassBox } from "./pages/GlassBox";
 import { FeeScanner } from "./pages/FeeScanner";
 import { Performance } from "./pages/Performance";
 import { Settings } from "./pages/Settings";
+import { Simulator } from "./pages/Simulator";
+import { Alerts } from "./pages/Alerts";
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const { isLoaded, isSignedIn, user } = useUser();
@@ -180,18 +182,10 @@ export default function App() {
           <Route path="data" element={<ImportData />} />
           <Route path="advisor" element={<AIAdvisor />} />
           <Route path="glass-box" element={<GlassBox />} />
+          <Route path="simulator" element={<Simulator />} />
           <Route path="fees" element={<FeeScanner />} />
           <Route path="performance" element={<Performance />} />
-          <Route
-            path="alerts"
-            element={
-              <div className="rounded-[16px] border border-glass-border bg-glass-bg p-8 backdrop-blur-[12px] shadow-glass">
-                <p className="text-center font-body text-text-secondary">
-                  Alerts will be implemented in Phase 4.
-                </p>
-              </div>
-            }
-          />
+          <Route path="alerts" element={<Alerts />} />
           <Route path="settings" element={<Settings />} />
         </Route>
 

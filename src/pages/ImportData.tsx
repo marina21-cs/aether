@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useUser } from "@clerk/react";
 import {
   FileSpreadsheet,
@@ -63,6 +63,16 @@ interface PersistedAssetRow {
   notes: string | null;
 }
 
+interface PendingCsvImport {
+  fileName: string;
+  parserLabel: string;
+  warningsCount: number;
+  holdings: Holding[];
+  tangibleMetaByKey: Record<string, TangibleMeta>;
+  aiSummary: string | null;
+  advisorPromptHint: string | null;
+}
+
 type ManualWizardStep = 1 | 2 | 3;
 
 const LEGAL_ATTESTATION_TEXT =
@@ -79,6 +89,35 @@ const SAMPLE_HOLDINGS_CSV = [
   "Family SUV,SUV2022,Tangible Assets,1,1200000,1180000,PHP",
 ].join("\n");
 
+const MOCK_DOWNLOAD_OPTIONS = [
+  {
+    value: "aether_sample_holdings.csv",
+    label: "Template: Sample Holdings CSV",
+  },
+  {
+    value: "aether_mock_holdings.csv",
+    label: "Mock: Base Holdings",
+  },
+  {
+    value: "aether_mock_holdings_incremental_batch_2.csv",
+    label: "Mock: Incremental Holdings Batch 2",
+  },
+  {
+    value: "aether_mock_bank_export.csv",
+    label: "Mock: Bank Export (Base)",
+  },
+  {
+    value: "aether_mock_bank_export_batch_2.csv",
+    label: "Mock: Bank Export Batch 2",
+  },
+  {
+    value: "aether_mock_tangible_assets.csv",
+    label: "Mock: Tangible Assets",
+  },
+] as const;
+
+type MockDownloadFile = (typeof MOCK_DOWNLOAD_OPTIONS)[number]["value"];
+
 function downloadTextFile(fileName: string, content: string) {
   const blob = new Blob([content], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -89,6 +128,19 @@ function downloadTextFile(fileName: string, content: string) {
   anchor.click();
   anchor.remove();
   URL.revokeObjectURL(url);
+}
+
+async function downloadPublicMockFile(fileName: string) {
+  const basePath = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
+  const fileUrl = `${basePath}/mock-data/${encodeURIComponent(fileName)}`;
+
+  const response = await fetch(fileUrl, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`Unable to download ${fileName}.`);
+  }
+
+  const content = await response.text();
+  downloadTextFile(fileName, content);
 }
 
 function toErrorMessage(error: unknown, fallback: string): string {
@@ -186,6 +238,10 @@ function toHoldingType(type: string): Holding["type"] {
     return type;
   }
   return normalizeType(type);
+}
+
+function getHoldingMergeKey(holding: Holding): string {
+  return `${holding.ticker.toUpperCase()}::${holding.type}::${holding.currency}`;
 }
 
 function safeJsonParse(input: string | null): Record<string, unknown> | null {
@@ -354,14 +410,60 @@ function toTangibleCategory(raw: unknown): TangibleCategory {
   return "other";
 }
 
+function mergeHoldingLists(existingHoldings: Holding[], incomingHoldings: Holding[]): Holding[] {
+  const merged = new Map<string, Holding>();
+
+  const upsert = (holding: Holding) => {
+    const key = getHoldingMergeKey(holding);
+    const current = merged.get(key);
+
+    if (!current) {
+      merged.set(key, { ...holding });
+      return;
+    }
+
+    const qty = current.qty + holding.qty;
+    if (qty <= 0) {
+      merged.delete(key);
+      return;
+    }
+
+    const totalCost = current.avgCost * current.qty + holding.avgCost * holding.qty;
+    const avgCost = qty > 0 ? totalCost / qty : current.avgCost;
+
+    merged.set(key, {
+      ...current,
+      qty,
+      avgCost: Number.isFinite(avgCost) ? avgCost : current.avgCost,
+      manualPrice: holding.manualPrice ?? current.manualPrice,
+    });
+  };
+
+  for (const holding of existingHoldings) {
+    upsert(holding);
+  }
+
+  for (const holding of incomingHoldings) {
+    upsert(holding);
+  }
+
+  return Array.from(merged.values());
+}
+
 export function ImportData() {
   const { user } = useUser();
   const { holdings, setHoldings, usdToPhp, formatDisplay, getTotalPortfolio } = useDashboard();
 
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [downloadingMock, setDownloadingMock] = useState(false);
+  const [autoHydratedUserId, setAutoHydratedUserId] = useState<string | null>(null);
+  const [selectedMockDownload, setSelectedMockDownload] = useState<MockDownloadFile>(
+    "aether_sample_holdings.csv"
+  );
   const [aiImportSummary, setAiImportSummary] = useState<string | null>(null);
   const [advisorPromptHint, setAdvisorPromptHint] = useState<string | null>(null);
+  const [pendingImport, setPendingImport] = useState<PendingCsvImport | null>(null);
 
   const [tangibleMetaByKey, setTangibleMetaByKey] = useState<Record<string, TangibleMeta>>({});
   const [manualStep, setManualStep] = useState<ManualWizardStep>(1);
@@ -433,25 +535,33 @@ export function ImportData() {
   };
 
   const applyImportedHoldings = async (
-    nextHoldings: Holding[],
-    nextTangibleMeta: Record<string, TangibleMeta>,
+    importedHoldings: Holding[],
+    importedTangibleMeta: Record<string, TangibleMeta>,
     statusMessage: string
   ) => {
+    const nextHoldings = mergeHoldingLists(holdings, importedHoldings);
+    const nextTangibleMeta = {
+      ...tangibleMetaByKey,
+      ...importedTangibleMeta,
+    };
+
     setHoldings(nextHoldings);
     setTangibleMetaByKey(nextTangibleMeta);
 
     if (!user) {
       setStatus(statusMessage);
-      return;
+      return true;
     }
 
     setBusy(true);
     try {
       await persistHoldingsToSupabase(nextHoldings, nextTangibleMeta, "import_pipeline");
       setStatus(`${statusMessage} Synced to Supabase and now visible in Dashboard and Holdings.`);
+      return true;
     } catch (error) {
       const detail = toErrorMessage(error, "Failed to sync imported holdings.");
       setStatus(`${statusMessage} Loaded locally. Supabase sync failed: ${detail}`);
+      return false;
     } finally {
       setBusy(false);
     }
@@ -460,6 +570,26 @@ export function ImportData() {
   const onDownloadSampleCsv = () => {
     downloadTextFile("aether_sample_holdings.csv", SAMPLE_HOLDINGS_CSV);
     setStatus("Downloaded sample holdings CSV.");
+  };
+
+  const onDownloadSelectedMock = async (fileOverride?: MockDownloadFile) => {
+    const targetFile = fileOverride || selectedMockDownload;
+
+    try {
+      setDownloadingMock(true);
+
+      if (targetFile === "aether_sample_holdings.csv") {
+        onDownloadSampleCsv();
+        return;
+      }
+
+      await downloadPublicMockFile(targetFile);
+      setStatus(`Downloaded ${targetFile}.`);
+    } catch (error) {
+      setStatus(toErrorMessage(error, `Failed to download ${targetFile}.`));
+    } finally {
+      setDownloadingMock(false);
+    }
   };
 
   const analyzeCsvOnServer = async (csvText: string): Promise<CsvAnalyzeResponse> => {
@@ -499,6 +629,13 @@ export function ImportData() {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    if (!file.name.toLowerCase().endsWith(".csv")) {
+      setStatus("Please upload a CSV export (.csv). XLSX, PDF, and image files are not supported in this step yet.");
+      event.target.value = "";
+      return;
+    }
+
+    setPendingImport(null);
     setBusy(true);
     setStatus(`Analyzing ${file.name}...`);
 
@@ -568,10 +705,17 @@ export function ImportData() {
           throw new Error("No valid holdings found in uploaded CSV.");
         }
 
-        await applyImportedHoldings(
-          parsedHoldings,
-          nextMetaMap,
-          `Loaded ${parsedHoldings.length} holdings via ${parserLabel} parser${parsedWarnings}.`
+        setPendingImport({
+          fileName: file.name,
+          parserLabel,
+          warningsCount: analysis.warnings.length,
+          holdings: parsedHoldings,
+          tangibleMetaByKey: nextMetaMap,
+          aiSummary: analysis.aiSummary || analysis.insights.join(" "),
+          advisorPromptHint: analysis.advisorPromptSuggestion || null,
+        });
+        setStatus(
+          `Parsed ${parsedHoldings.length} holdings via ${parserLabel} parser${parsedWarnings}. Review and confirm before adding.`
         );
       } catch {
         parsedHoldings = fallbackParseCsv(csvText);
@@ -580,10 +724,17 @@ export function ImportData() {
         }
         setAiImportSummary(null);
         setAdvisorPromptHint(null);
-        await applyImportedHoldings(
-          parsedHoldings,
-          nextMetaMap,
-          `Loaded ${parsedHoldings.length} holdings using local fallback parser.`
+        setPendingImport({
+          fileName: file.name,
+          parserLabel: "fallback",
+          warningsCount: 0,
+          holdings: parsedHoldings,
+          tangibleMetaByKey: nextMetaMap,
+          aiSummary: null,
+          advisorPromptHint: null,
+        });
+        setStatus(
+          `Parsed ${parsedHoldings.length} holdings using local fallback parser. Review and confirm before adding.`
         );
       }
     } catch (error) {
@@ -593,6 +744,73 @@ export function ImportData() {
     }
 
     event.target.value = "";
+  };
+
+  const pendingTypeBreakdown = useMemo(() => {
+    if (!pendingImport) return [] as Array<{ type: Holding["type"]; count: number }>;
+
+    const counts = new Map<Holding["type"], number>();
+    for (const holding of pendingImport.holdings) {
+      counts.set(holding.type, (counts.get(holding.type) || 0) + 1);
+    }
+
+    return Array.from(counts.entries())
+      .map(([type, count]) => ({ type, count }))
+      .sort((a, b) => b.count - a.count);
+  }, [pendingImport]);
+
+  const pendingMergeSummary = useMemo(() => {
+    if (!pendingImport) return null;
+
+    const existingKeys = new Set(holdings.map(getHoldingMergeKey));
+    let overlappingRows = 0;
+    let newRows = 0;
+
+    for (const holding of pendingImport.holdings) {
+      if (existingKeys.has(getHoldingMergeKey(holding))) {
+        overlappingRows += 1;
+      } else {
+        newRows += 1;
+      }
+    }
+
+    const merged = mergeHoldingLists(holdings, pendingImport.holdings);
+
+    return {
+      currentCount: holdings.length,
+      parsedCount: pendingImport.holdings.length,
+      newRows,
+      overlappingRows,
+      mergedCount: merged.length,
+    };
+  }, [holdings, pendingImport]);
+
+  const onConfirmPendingImport = async () => {
+    if (!pendingImport) return;
+
+    setAiImportSummary(pendingImport.aiSummary);
+    setAdvisorPromptHint(pendingImport.advisorPromptHint);
+
+    const warningSuffix =
+      pendingImport.warningsCount > 0
+        ? ` (${pendingImport.warningsCount} warning${pendingImport.warningsCount > 1 ? "s" : ""})`
+        : "";
+
+    const saved = await applyImportedHoldings(
+      pendingImport.holdings,
+      pendingImport.tangibleMetaByKey,
+      `Added ${pendingImport.holdings.length} parsed holdings from ${pendingImport.fileName} via ${pendingImport.parserLabel} parser${warningSuffix}.`
+    );
+
+    if (saved) {
+      setPendingImport(null);
+    }
+  };
+
+  const onDiscardPendingImport = () => {
+    if (!pendingImport) return;
+    setPendingImport(null);
+    setStatus(`Discarded parsed results from ${pendingImport.fileName}.`);
   };
 
   const onAddManualHolding = async () => {
@@ -692,14 +910,18 @@ export function ImportData() {
     }
   };
 
-  const onLoadFromSupabase = async () => {
+  const hydrateFromSupabase = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
     if (!user) {
-      setStatus("Sign in first to load holdings.");
-      return;
+      if (!silent) {
+        setStatus("Sign in first to load holdings.");
+      }
+      return false;
     }
 
-    setBusy(true);
-    setStatus("Loading holdings from Supabase...");
+    if (!silent) {
+      setBusy(true);
+      setStatus("Loading holdings from Supabase...");
+    }
 
     try {
       const response = await fetch(
@@ -716,8 +938,10 @@ export function ImportData() {
           : null;
 
       if (!data || data.length === 0) {
-        setStatus("No saved holdings found in Supabase yet. Upload a CSV or add assets manually.");
-        return;
+        if (!silent) {
+          setStatus("No saved holdings found in Supabase yet. Upload a CSV or add assets manually.");
+        }
+        return false;
       }
 
       const nextTangibleMeta: Record<string, TangibleMeta> = {};
@@ -774,13 +998,46 @@ export function ImportData() {
 
       setHoldings(hydrated);
       setTangibleMetaByKey(nextTangibleMeta);
-      setStatus(`Loaded ${hydrated.length} holdings from Supabase.`);
+
+      if (!silent) {
+        setStatus(`Loaded ${hydrated.length} holdings from Supabase.`);
+      }
+
+      return true;
     } catch (error) {
-      setStatus(toErrorMessage(error, "Failed to load holdings."));
+      if (!silent) {
+        setStatus(toErrorMessage(error, "Failed to load holdings."));
+      }
+      return false;
     } finally {
-      setBusy(false);
+      if (!silent) {
+        setBusy(false);
+      }
     }
+  }, [setHoldings, user]);
+
+  const onLoadFromSupabase = async () => {
+    await hydrateFromSupabase();
   };
+
+  useEffect(() => {
+    if (!user?.id || busy) return;
+    if (autoHydratedUserId === user.id) return;
+
+    setAutoHydratedUserId(user.id);
+
+    // If holdings already exist from dashboard hydration, skip extra fetch.
+    if (holdings.length > 0) {
+      return;
+    }
+
+    void (async () => {
+      const loaded = await hydrateFromSupabase({ silent: true });
+      if (loaded) {
+        setStatus((prev) => prev ?? "Loaded your recently saved holdings for this account.");
+      }
+    })();
+  }, [autoHydratedUserId, busy, holdings.length, hydrateFromSupabase, user?.id]);
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 animate-in fade-in duration-500">
@@ -801,19 +1058,42 @@ export function ImportData() {
             CSV + AI Import Pipeline
           </h2>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-glass-border bg-bg-surface px-4 py-3 text-sm text-text-primary hover:bg-white/5">
               <FileSpreadsheet className="h-4 w-4" /> Upload CSV
               <input type="file" accept=".csv" className="hidden" onChange={onCsvUpload} />
             </label>
 
-            <button
-              type="button"
-              onClick={onDownloadSampleCsv}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-glass-border bg-bg-surface px-4 py-3 text-sm text-text-primary hover:bg-white/5"
-            >
-              <Download className="h-4 w-4" /> Download Sample CSV
-            </button>
+            <div className="rounded-xl border border-glass-border bg-bg-surface p-2 sm:col-span-2 xl:col-span-1">
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <select
+                  value={selectedMockDownload}
+                  onChange={(event) => {
+                    const nextFile = event.target.value as MockDownloadFile;
+                    setSelectedMockDownload(nextFile);
+                    void onDownloadSelectedMock(nextFile);
+                  }}
+                  className="h-9 min-w-0 flex-1 rounded-md border border-glass-border bg-bg-dark px-2 text-xs text-text-primary focus:border-accent-primary/60 focus:outline-none"
+                >
+                  {MOCK_DOWNLOAD_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  disabled={busy || downloadingMock}
+                  onClick={() => void onDownloadSelectedMock()}
+                  className="inline-flex h-9 shrink-0 items-center justify-center gap-1 rounded-md border border-glass-border bg-bg-dark px-2.5 text-xs text-text-primary hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Download className="h-3.5 w-3.5" /> {downloadingMock ? "Downloading..." : "Download"}
+                </button>
+              </div>
+              <p className="mt-1 px-1 text-[11px] text-text-muted">
+                Select a mock file to auto-download, or use the button to re-download.
+              </p>
+            </div>
 
             <button
               type="button"
@@ -836,6 +1116,113 @@ export function ImportData() {
                   Suggested advisor prompt: <span className="font-medium text-text-secondary">{advisorPromptHint}</span>
                 </p>
               )}
+            </div>
+          )}
+
+          {busy && (
+            <div className="mt-4 rounded-xl border border-accent-secondary/40 bg-accent-secondary/10 p-4 text-sm text-text-secondary">
+              <p className="inline-flex items-center font-semibold text-accent-secondary">
+                <Sparkles className="mr-1 h-4 w-4" /> Parsing Upload...
+              </p>
+              <p className="mt-1 text-xs text-text-muted">
+                We are parsing your file now. A review summary will appear before anything is added.
+              </p>
+            </div>
+          )}
+
+          {pendingImport && pendingMergeSummary && (
+            <div className="mt-4 rounded-xl border border-accent-secondary/40 bg-accent-secondary/10 p-4 text-sm text-text-secondary">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="font-semibold text-accent-secondary">Upload Summary (Review Before Add)</p>
+                <span className="rounded-full border border-accent-secondary/40 bg-black/20 px-2 py-0.5 text-xs text-accent-secondary">
+                  {pendingImport.fileName}
+                </span>
+              </div>
+
+              <p className="mt-2 text-xs text-text-muted">
+                Parser: {pendingImport.parserLabel} | Rows parsed: {pendingImport.holdings.length} | Warnings: {pendingImport.warningsCount}
+              </p>
+
+              <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-5">
+                <div className="rounded-lg border border-glass-border bg-bg-dark px-2 py-1.5 text-xs">
+                  <p className="text-text-muted">Current</p>
+                  <p className="font-semibold text-text-primary">{pendingMergeSummary.currentCount}</p>
+                </div>
+                <div className="rounded-lg border border-glass-border bg-bg-dark px-2 py-1.5 text-xs">
+                  <p className="text-text-muted">Parsed</p>
+                  <p className="font-semibold text-text-primary">{pendingMergeSummary.parsedCount}</p>
+                </div>
+                <div className="rounded-lg border border-glass-border bg-bg-dark px-2 py-1.5 text-xs">
+                  <p className="text-text-muted">New Rows</p>
+                  <p className="font-semibold text-accent-primary">{pendingMergeSummary.newRows}</p>
+                </div>
+                <div className="rounded-lg border border-glass-border bg-bg-dark px-2 py-1.5 text-xs">
+                  <p className="text-text-muted">Overlaps</p>
+                  <p className="font-semibold text-accent-warning">{pendingMergeSummary.overlappingRows}</p>
+                </div>
+                <div className="rounded-lg border border-glass-border bg-bg-dark px-2 py-1.5 text-xs">
+                  <p className="text-text-muted">After Merge</p>
+                  <p className="font-semibold text-accent-secondary">{pendingMergeSummary.mergedCount}</p>
+                </div>
+              </div>
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                {pendingTypeBreakdown.map((row) => (
+                  <span
+                    key={`${pendingImport.fileName}-${row.type}`}
+                    className="rounded-full border border-glass-border bg-bg-dark px-2 py-0.5 text-xs text-text-secondary"
+                  >
+                    {row.type}: {row.count}
+                  </span>
+                ))}
+              </div>
+
+              <div className="mt-3 overflow-x-auto">
+                <table className="w-full min-w-[520px] border-collapse text-xs">
+                  <thead>
+                    <tr className="border-b border-glass-border text-text-muted">
+                      <th className="px-2 py-2 text-left font-medium">Asset</th>
+                      <th className="px-2 py-2 text-left font-medium">Ticker</th>
+                      <th className="px-2 py-2 text-left font-medium">Type</th>
+                      <th className="px-2 py-2 text-right font-medium">Qty</th>
+                      <th className="px-2 py-2 text-right font-medium">Currency</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pendingImport.holdings.slice(0, 8).map((holding) => (
+                      <tr
+                        key={`${pendingImport.fileName}-${holding.ticker}-${holding.name}-${holding.type}`}
+                        className="border-b border-glass-border/60"
+                      >
+                        <td className="px-2 py-2 text-text-primary">{holding.name}</td>
+                        <td className="px-2 py-2">{holding.ticker}</td>
+                        <td className="px-2 py-2">{holding.type}</td>
+                        <td className="px-2 py-2 text-right">{holding.qty.toLocaleString()}</td>
+                        <td className="px-2 py-2 text-right">{holding.currency}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={onDiscardPendingImport}
+                  className="rounded-lg border border-glass-border bg-bg-dark px-3 py-2 text-xs text-text-secondary disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Discard
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={onConfirmPendingImport}
+                  className="rounded-lg bg-accent-secondary px-3 py-2 text-xs font-semibold text-white hover:bg-accent-secondary/90 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Confirm Add + Save to Supabase
+                </button>
+              </div>
             </div>
           )}
 
@@ -1097,6 +1484,46 @@ export function ImportData() {
               {status}
             </p>
           )}
+
+          <div className="mt-4 rounded-xl border border-glass-border bg-bg-surface p-4">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold text-text-primary">Imported Holdings Preview</h3>
+              <span className="text-xs text-text-muted">
+                Showing {Math.min(holdings.length, 8)} of {holdings.length}
+              </span>
+            </div>
+
+            {holdings.length === 0 ? (
+              <p className="mt-3 text-xs text-text-muted">
+                No holdings loaded yet. Upload a CSV or click "Load From Supabase".
+              </p>
+            ) : (
+              <div className="mt-3 overflow-x-auto">
+                <table className="w-full min-w-[520px] border-collapse text-xs">
+                  <thead>
+                    <tr className="border-b border-glass-border text-text-muted">
+                      <th className="px-2 py-2 text-left font-medium">Asset</th>
+                      <th className="px-2 py-2 text-left font-medium">Ticker</th>
+                      <th className="px-2 py-2 text-left font-medium">Type</th>
+                      <th className="px-2 py-2 text-right font-medium">Qty</th>
+                      <th className="px-2 py-2 text-right font-medium">Currency</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {holdings.slice(0, 8).map((holding) => (
+                      <tr key={`${holding.ticker}-${holding.name}`} className="border-b border-glass-border/60 text-text-secondary">
+                        <td className="px-2 py-2 text-text-primary">{holding.name}</td>
+                        <td className="px-2 py-2">{holding.ticker}</td>
+                        <td className="px-2 py-2">{holding.type}</td>
+                        <td className="px-2 py-2 text-right">{holding.qty.toLocaleString()}</td>
+                        <td className="px-2 py-2 text-right">{holding.currency}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </section>
 
         <section className="glass-panel rounded-2xl border border-glass-border p-6">

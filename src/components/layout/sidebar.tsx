@@ -7,6 +7,7 @@ import {
   Brain,
   Calculator,
   BadgePercent,
+  FlaskConical,
   TrendingUp,
   Settings,
   FileText,
@@ -26,6 +27,7 @@ const mainNav = [
 const analysisNav = [
   { href: "/dashboard/advisor", label: "AI Advisor", icon: Brain },
   { href: "/dashboard/glass-box", label: "Glass Box", icon: Calculator },
+  { href: "/dashboard/simulator", label: "Simulator", icon: FlaskConical },
   { href: "/dashboard/fees", label: "Fee Analyzer", icon: BadgePercent },
   { href: "/dashboard/performance", label: "Performance", icon: TrendingUp },
   { href: "/dashboard/alerts", label: "Alerts", icon: Bell },

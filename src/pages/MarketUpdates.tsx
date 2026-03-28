@@ -383,6 +383,7 @@ export default function MarketUpdates() {
   }, [fxRates]);
 
   const cryptoTape = useMemo(() => {
+    const usdToSgd = fxRates?.SGD ?? FX_FALLBACK.SGD;
     return TRACKED_CRYPTO_TICKERS.map((ticker) => {
       const usdPrice = cryptoPrices[ticker];
       const previous = previousCryptoPrices[ticker];
@@ -394,7 +395,9 @@ export default function MarketUpdates() {
         typeof usdPrice === "number"
           ? displayCurrency === "PHP"
             ? usdPrice * usdToPhp
-            : usdPrice
+            : displayCurrency === "SGD"
+              ? usdPrice * usdToSgd
+              : usdPrice
           : null;
 
       return {
@@ -405,7 +408,7 @@ export default function MarketUpdates() {
         hasLive: typeof usdPrice === "number",
       };
     });
-  }, [cryptoPrices, previousCryptoPrices, displayCurrency, usdToPhp]);
+  }, [cryptoPrices, previousCryptoPrices, displayCurrency, fxRates?.SGD, usdToPhp]);
 
   const sortedCryptoTape = useMemo(() => {
     return [...cryptoTape].sort((a, b) => Math.abs(b.changePct) - Math.abs(a.changePct));
@@ -543,7 +546,11 @@ export default function MarketUpdates() {
         <div className="glass-panel rounded-[16px] p-5">
           <p className="font-body text-xs uppercase tracking-[0.08em] text-text-muted">FX Feed</p>
           <p className="mt-2 text-2xl font-bold text-text-primary tabular-nums" style={{ fontFamily: "JetBrains Mono, monospace" }}>
-            $1 = {displayCurrency === "PHP" ? `₱${(fxRates?.PHP ?? FX_FALLBACK.PHP).toFixed(2)}` : `$${(1).toFixed(2)}`}
+            $1 = {displayCurrency === "PHP"
+              ? `₱${(fxRates?.PHP ?? FX_FALLBACK.PHP).toFixed(2)}`
+              : displayCurrency === "SGD"
+                ? `S$${(fxRates?.SGD ?? FX_FALLBACK.SGD).toFixed(2)}`
+                : `$${(1).toFixed(2)}`}
           </p>
           <p className="mt-1 inline-flex items-center gap-1 text-xs text-text-muted">
             <span className={cn("inline-block h-2 w-2 rounded-full", fxStatus === "fresh" ? "bg-accent-primary pulse-dot" : "bg-accent-warning")} />

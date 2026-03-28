@@ -1,6 +1,6 @@
 # PROJECT AETHER
 **Next-Generation Wealth Management Platform**
-Revised Project Specification — Version 4.0.0 · Production Blueprint
+Revised Project Specification — Version 4.1.0 · Production Blueprint
 
 | Field | Value |
 |---|---|
@@ -15,13 +15,13 @@ Revised Project Specification — Version 4.0.0 · Production Blueprint
 
 ## 01 · Executive Summary
 
-**Product:** AETHER — A unified wealth intelligence platform that gives Filipino retail investors a real-time, mathematically transparent view of their entire net worth across all asset classes.
+**Product:** AETHER — A unified wealth intelligence platform that gives Filipino retail investors a real-time, mathematically transparent view of their entire net worth across all asset classes, with contextual financial literacy guidance built into every decision surface.
 
-**Problem:** Filipino investors manage wealth across disconnected silos — COL Financial, Binance, BDO savings, a condo in BGC — with no single tool that unifies, analyzes, and advises in Philippine context. Global tools (Mint, Personal Capital) are blind to PSE data, BSP rates, and Philippine CPI.
+**Problem:** Filipino investors manage wealth across disconnected silos — COL Financial, Binance, BDO savings, a condo in BGC — with no single tool that unifies, analyzes, and advises in Philippine context. Global tools (Mint, Personal Capital) are blind to PSE data, BSP rates, and Philippine CPI. Even when data is available, most users still struggle to translate financial jargon into confident action.
 
-**Solution:** A web-first dashboard that consolidates every peso of wealth into one view, surfaces hidden fee erosion, projects future net worth with visible math, and provides AI-powered advice grounded in the user's actual portfolio and Philippine market conditions.
+**Solution:** A web-first dashboard that consolidates every peso of wealth into one view, surfaces hidden fee erosion, projects future net worth with visible math, and provides AI-powered advice grounded in the user's actual portfolio and Philippine market conditions. Aether adds a built-in literacy layer that explains terms, trade-offs, and risk in plain language at the moment users need it.
 
-**Unique Angle:** Glass Box transparency. Every prediction shows the formula. Every recommendation shows the reasoning. No black boxes.
+**Unique Angle:** Glass Box transparency + contextual financial literacy. Every prediction shows the formula. Every recommendation shows the reasoning. Every critical metric can be explained in plain language. No black boxes.
 
 ---
 
@@ -32,6 +32,7 @@ Revised Project Specification — Version 4.0.0 · Production Blueprint
 | A unified net worth tracker across PH asset classes | A trading terminal or brokerage platform |
 | A transparent, math-visible forecasting engine | A black-box robo-advisor |
 | An AI advisor grounded in your actual portfolio | A generic chatbot with financial opinions |
+| A contextual financial literacy system tied to your real data | A static finance course marketplace |
 | A Philippines-first product with local context | A US product poorly localized |
 | A web dashboard optimized for data density | A mobile app (V1) |
 
@@ -43,7 +44,7 @@ Revised Project Specification — Version 4.0.0 · Production Blueprint
 
 Filipino investors today manage their wealth across fundamentally disconnected silos: a COL Financial account here, a BTC wallet there, a property in Bulacan valued only by memory, and a savings account losing ground to 6%+ CPI inflation. No single tool exists to unify, analyze, and intelligently advise on this fragmented landscape — and global platforms are blind to Philippine-specific financial context (BSP rates, PSE data, REIT performance, local inflation).
 
-### The Five Pain Points
+### The Six Pain Points
 
 | # | Pain Point | Impact |
 |---|---|---|
@@ -52,6 +53,7 @@ Filipino investors today manage their wealth across fundamentally disconnected s
 | 3 | **Black-Box Advisory** — Existing tools issue recommendations with no mathematical justification | Trust deficit — sophisticated Filipino investors want to see the math |
 | 4 | **Hidden Wealth Erosion** — UITF fees of 1.5%, savings at 0.25% vs. 6.1% CPI — invisible losses | Users unknowingly lose 5%+ purchasing power annually |
 | 5 | **Decision Paralysis** — No way to safely test "What if I sell stocks and buy a rental property?" | Major financial decisions made with incomplete data |
+| 6 | **Financial Literacy Gap** — Investors can view numbers but cannot interpret concepts like variance, real returns, and fee drag in PH context | Data exists, but confidence and action quality remain low |
 
 ---
 
@@ -73,10 +75,17 @@ Filipino investors today manage their wealth across fundamentally disconnected s
 - **Frequency:** Weekly check-ins, monthly deep reviews
 - **Tier:** Pro subscriber (₱499/month)
 
+### Tertiary Persona: The Emerging Investor (Learning-Oriented)
+
+- **Profile:** Early-stage investor with 1-3 asset classes and strong intent to learn before scaling positions
+- **Pain:** Understands balances but not the "why" behind inflation-adjusted returns, risk, and fees
+- **Frequency:** 3-4 sessions/week, mostly interpretation and planning
+- **Tier:** Starts on Free, converts to Pro when scenario simulation and deeper explainers become needed
+
 ### Anti-Persona (Not Our User for V1)
 
 - Day traders needing real-time order execution
-- Beginners with no existing portfolio (V2: onboarding education layer)
+- Absolute beginners with zero investable assets (Aether is still a wealth platform first, not a standalone beginner finance school)
 - Users who only want expense tracking (this is Mint territory, not ours)
 
 ---
@@ -92,6 +101,7 @@ Filipino investors today manage their wealth across fundamentally disconnected s
 | Monte Carlo Simulator | ✗ | ✗ | ✗ | ✗ | ✓ |
 | Inflation-Adjusted Returns | ✗ | ✗ | ✗ | ✗ | ✓ |
 | Hidden Fee Detection | ✗ | ✗ | ✗ | ✗ | ✓ |
+| Contextual Financial Literacy (in-workflow) | ✗ | ✗ | ✗ | Partial | ✓ |
 | Real Estate Tracking | ✗ | ✗ | ✗ | ✗ | ✓ (manual) |
 
 ### Unfair Advantages
@@ -100,12 +110,13 @@ Filipino investors today manage their wealth across fundamentally disconnected s
 2. **Philippine Context by Default** — BSP rates, PSA CPI, PSEi benchmarks baked into every calculation and AI response. Not an addon — the foundation.
 3. **Omni-Asset Architecture** — PSE equities, crypto, real estate, UITFs, time deposits, cash, gold — all in one schema from day one.
 4. **AI That Knows Your Portfolio** — The advisor sees your actual holdings, risk profile, and market conditions before answering. This is not ChatGPT with a finance prompt.
+5. **Literacy Embedded in Workflow** — Aether teaches while users make real decisions: metric explainers, plain-language risk interpretation, and PH-specific examples anchored to the portfolio.
 
 ---
 
 ## 05 · Complete Feature Definitions
 
-### 5.1 · MVP Features (Must Ship — Phase 1+2, Weeks 1–12)
+### 5.1 · MVP Features (Must Ship — Phase 1–3, Weeks 1–12)
 
 #### FEATURE 1: Omni-Asset Net Worth Dashboard
 **Complexity:** Large · **Priority:** P0 — This IS the product
@@ -147,6 +158,8 @@ A conversational AI advisor that answers financial questions with full context o
 - **Interface:** Right-rail panel on dashboard (320px collapsed, expandable to full page). Terminal-style — NOT chat bubbles. Structured responses: Answer → Data → Sources → Confidence
 - **Streaming:** Server-sent events for token-by-token response rendering
 - **Context window management:** Portfolio summary + last 5 conversation turns + market context = ~4K tokens of system context
+- **Literacy mode:** Every response supports "Explain in plain language" and "Explain with PH example" variants without losing numerical accuracy
+- **Jargon guardrail:** If advanced terms (variance, Sharpe ratio, fee drag) appear, the advisor auto-attaches short definitions and practical interpretation
 - **Guardrails:** Disclaimer on every response: "AETHER provides analysis, not licensed financial advice. Consult a registered financial advisor for personal decisions."
 - **Rate limiting:** 20 queries/day on Free tier, 100/day on Pro tier
 - **Cost management:** Cache identical queries for 1 hour. Average cost per query: ~$0.01–0.03
@@ -180,7 +193,18 @@ Transparent quantitative forecasting that SHOWS the mathematical model — the d
 - Flags savings accounts and time deposits with negative real returns
 - Side-by-side nominal vs. real return for every holding
 
-#### FEATURE 7: Historical Performance Tracking
+#### FEATURE 7: Financial Literacy Layer (Contextual Learn-While-Doing)
+**Complexity:** Medium · **Priority:** P1
+
+Embedded literacy that improves decision quality inside core workflows, without turning the product into a generic course platform.
+
+- **Inline explainers:** Any key metric (allocation %, volatility, real return, fee drag) is clickable for a plain-language definition + "why this matters"
+- **Decision cards:** For common user decisions (rebalance, add cash, reduce fees), show trade-offs, risk reminders, and confidence cues
+- **PH context examples:** Explainers use BSP/PSA/PSE examples rather than US-only assumptions
+- **Adaptive depth:** Two modes in settings — Concise (one-screen summary) and Guided (step-by-step interpretation)
+- **Weekly literacy digest:** In-app recap of 3 concepts based on recent user behavior and portfolio composition
+
+#### FEATURE 8: Historical Performance Tracking
 **Complexity:** Medium · **Priority:** P1
 
 - Time-series net worth chart with adjustable range: 1M, 3M, 6M, 1Y, 3Y, All
@@ -195,7 +219,7 @@ Transparent quantitative forecasting that SHOWS the mathematical model — the d
 
 ### 5.2 · V1.1 Features (Post-Launch, Weeks 13–20)
 
-#### FEATURE 8: Sandbox Wealth Simulator
+#### FEATURE 9: Sandbox Wealth Simulator
 **Complexity:** Large
 
 "What-if" simulation environment isolated from real portfolio data.
@@ -204,7 +228,7 @@ Transparent quantitative forecasting that SHOWS the mathematical model — the d
 - Save/compare multiple scenarios
 - Event annotations: "Bought condo," "Increased SIP by ₱10K"
 
-#### FEATURE 9: PSEi & Benchmark Alert System
+#### FEATURE 10: PSEi & Benchmark Alert System
 **Complexity:** Medium
 
 - Push notifications (web) and in-app alerts
@@ -212,7 +236,7 @@ Transparent quantitative forecasting that SHOWS the mathematical model — the d
 - Toggle-based alert management with alert history
 - Max 10 active alerts on Free, 50 on Pro
 
-#### FEATURE 10: Multi-Currency Display
+#### FEATURE 11: Multi-Currency Display
 **Complexity:** Small
 
 - Toggle display currency: PHP, USD, SGD
@@ -226,6 +250,7 @@ Transparent quantitative forecasting that SHOWS the mathematical model — the d
 | Feature | Complexity | Trigger |
 |---|---|---|
 | **RAG AI Advisor** — pgvector knowledge base with curated BSP/PSE/SEC corpus (50–100 docs) | Large | When monthly update cadence is established and user queries reveal retrieval gaps |
+| **Guided Learning Paths + Readiness Scoring** — personalized literacy tracks and comprehension checkpoints | Medium | When >30% of WAU engage with literacy cards weekly |
 | **Automated Broker Sync** — BSP Open Finance Framework integration | Large | When BSP Open Finance APIs stabilize and COL/FirstMetro participate |
 | **React Native Mobile App** — or PWA with full offline support | Epic | When web DAU exceeds 1,000 and mobile usage data justifies |
 | **Advanced Portfolio Optimization** — Markowitz efficient frontier, Black-Litterman model | Medium | When Pro subscriber base exceeds 100 |
@@ -239,6 +264,37 @@ Transparent quantitative forecasting that SHOWS the mathematical model — the d
 - **Expense tracking** — This is not Mint. We track assets and investments, not daily spending.
 - **Crypto trading** — No swap, no DEX, no wallet connect. Price display only.
 - **Robo-advisory** — We show the math and let the user decide. We don't auto-rebalance portfolios.
+- **Generic course marketplace** — Literacy is contextual and portfolio-linked, not a standalone textbook catalog.
+
+### 5.5 · Financial Literacy Operating Model (MVP)
+
+Financial literacy is a product system, not just UI copy. This model defines what gets taught, when it appears, and how quality is controlled.
+
+#### Literacy Objectives (User Outcomes)
+
+- Users can explain the difference between nominal and real return after seeing their own portfolio data.
+- Users can identify at least one high-fee holding and understand long-term fee drag impact.
+- Users can interpret basic risk signals (volatility bands, downside scenarios) before making allocation changes.
+
+#### Trigger-to-Content Rules
+
+- **Real-return trigger:** If an asset has negative real return for 2 consecutive months, show inflation explainer + action card.
+- **Fee trigger:** If `annual_fee_pct > 0.01`, show fee drag explainer + lower-cost alternatives card.
+- **Risk trigger:** If portfolio concentration exceeds 35% in a single asset class, show diversification explainer + scenario suggestion.
+- **Volatility trigger:** If projected 10th percentile drawdown crosses user risk tolerance threshold, show risk interpretation card.
+
+#### Content Quality Standards
+
+- **Readability:** Concise mode aims for Grade 8-10 reading level; Guided mode can use advanced terms with inline definitions.
+- **Local relevance:** Examples must use PH context (BSP rate moves, PSA CPI, PSEi comparisons) when available.
+- **Source traceability:** Literacy cards include a short source label (Model, Portfolio Data, BSP/PSA/PSE reference).
+- **No certainty language:** Cards and AI explanations avoid promises (for example: no "guaranteed" or "risk-free").
+
+#### Governance
+
+- Quarterly editorial review for top 30 literacy cards by usage.
+- Finance domain reviewer signs off on high-impact cards (risk, inflation, fee guidance).
+- Any card with poor helpfulness score is revised within one sprint.
 
 ---
 
@@ -331,6 +387,8 @@ All API routes under `/api/v1/`. Authentication via Supabase JWT in Authorizatio
 | POST | `/api/v1/data/upload-csv` | Upload and parse COL Financial CSV | Required | 5/min |
 | GET | `/api/v1/data/audit-log` | Data change history, paginated | Required | 30/min |
 | POST | `/api/v1/advisor/ask` | Send question to AI advisor, returns streaming response | Required | Free: 20/day, Pro: 100/day |
+| GET | `/api/v1/literacy/modules` | Fetch contextual literacy cards by topic and user portfolio gaps | Required | 60/min |
+| POST | `/api/v1/literacy/explain` | Explain a metric or term in plain language with PH examples | Required | 30/min |
 | GET | `/api/v1/analytics/real-return` | Inflation-adjusted return per asset | Required | 30/min |
 | GET | `/api/v1/analytics/fee-scan` | Fee analysis with 10-year projections | Required | 30/min |
 | GET | `/api/v1/analytics/glass-box` | Portfolio variance, covariance matrix, Monte Carlo data | Required | 10/min |
@@ -364,6 +422,8 @@ Extends Supabase Auth `auth.users` with application data.
 | id | UUID PK | References `auth.users(id)` | Supabase Auth UID |
 | full_name | TEXT | Optional | Display name |
 | risk_tolerance | TEXT | `CHECK (risk_tolerance IN ('conservative','moderate','aggressive'))`, default `'moderate'` | Investment risk profile |
+| literacy_mode | TEXT | `CHECK (literacy_mode IN ('concise','guided'))`, default `'guided'` | Controls educational detail level across UI and AI responses |
+| preferred_language | TEXT | `CHECK (preferred_language IN ('english','taglish'))`, default `'english'` | Preferred language style for explainers |
 | base_currency | TEXT | `CHECK (base_currency IN ('PHP','USD','SGD'))`, default `'PHP'` | Display currency |
 | subscription_tier | TEXT | `CHECK (subscription_tier IN ('free','pro'))`, default `'free'` | Billing tier |
 | onboarding_complete | BOOLEAN | Default `false` | Has user completed setup wizard |
@@ -457,6 +517,19 @@ Extends Supabase Auth `auth.users` with application data.
 | tags | TEXT[] | | e.g., `['bsp','interest_rate','monetary_policy']` |
 | created_at | TIMESTAMPTZ | Default `now()` | When ingested |
 
+### Table: `literacy_progress`
+
+| Column | Type | Constraints | Description |
+|---|---|---|---|
+| id | UUID PK | Default `gen_random_uuid()` | Progress record ID |
+| user_id | UUID FK | References `profiles(id)` ON DELETE CASCADE | Owner |
+| module_slug | TEXT | NOT NULL | Unique module key (e.g., `real-return-basics`) |
+| status | TEXT | `CHECK (status IN ('not_started','in_progress','completed'))`, default `'not_started'` | Completion status |
+| quiz_score | NUMERIC(5,2) | Optional | Optional comprehension score (%) |
+| last_viewed_at | TIMESTAMPTZ | Default `now()` | Last time module was opened |
+| completed_at | TIMESTAMPTZ | Optional | Completion timestamp |
+| created_at | TIMESTAMPTZ | Default `now()` | Record creation |
+
 ### Indexes
 
 ```sql
@@ -466,6 +539,7 @@ CREATE INDEX idx_transactions_asset ON transactions(asset_id);
 CREATE INDEX idx_transactions_date ON transactions(tx_date DESC);
 CREATE INDEX idx_audit_log_user ON audit_log(user_id, created_at DESC);
 CREATE INDEX idx_price_cache_ticker ON price_cache(ticker);
+CREATE INDEX idx_literacy_progress_user ON literacy_progress(user_id, module_slug);
 -- V2: CREATE INDEX idx_market_context_vector ON market_context USING ivfflat (content_vector vector_cosine_ops);
 ```
 
@@ -570,12 +644,12 @@ This keeps Aether firmly in the "analytics tool" category, minimizing SEC/BSP li
 
 | Phase | Name | Weeks | Key Deliverables |
 |---|---|---|---|
-| **1** | **Foundation** | 1–4 | Supabase setup (schema, RLS, auth), Next.js scaffold, design system implementation (tokens from 00_DESIGN_SYSTEM.md), landing page, email registration page, onboarding flow (4 screens) |
+| **1** | **Foundation** | 1–4 | Supabase setup (schema, RLS, auth), Next.js scaffold, design system implementation (tokens from 00_DESIGN_SYSTEM.md), landing page, email registration page, onboarding flow (4 screens), literacy taxonomy + content standards v1 |
 | **2** | **Core Dashboard** | 5–8 | Net worth dashboard (3-panel layout), manual asset entry, CSV import (COL parser), holdings table, allocation view, price cache (CoinGecko + PSE Edge + BSP forex), historical net worth chart |
-| **3** | **Intelligence Layer** | 9–12 | AI advisor (smart prompting + streaming), Glass Box engine (variance model + Monte Carlo in Web Worker), fee analyzer, real-return calculator, performance history with PSEi benchmark, settings page |
+| **3** | **Intelligence Layer** | 9–12 | AI advisor (smart prompting + streaming), Glass Box engine (variance model + Monte Carlo in Web Worker), fee analyzer, real-return calculator, financial literacy layer (inline explainers + weekly digest), literacy trigger engine + helpfulness feedback loop, performance history with PSEi benchmark, settings page |
 | — | **MVP LAUNCH** | Week 12 | Public beta with core feature set. Free tier + Pro subscription (₱299–₱499/month) |
 | **4** | **Simulator + Alerts** | 13–16 | Sandbox wealth simulator, alert system (web push + in-app), multi-currency display, weekly email digest |
-| **5** | **RAG + Data Pipeline** | 17–24 | pgvector corpus (50–100 curated PH financial docs), RAG retrieval integrated into advisor, automated CPI/price feeds via Edge Functions, PDF report export |
+| **5** | **RAG + Data Pipeline** | 17–24 | pgvector corpus (50–100 curated PH financial docs), RAG retrieval integrated into advisor, guided literacy paths, automated CPI/price feeds via Edge Functions, PDF report export |
 | **6** | **Scale + Mobile** | 25–35 | Performance optimization, PWA or React Native evaluation, advanced portfolio analytics, BSP Open Finance integration (when available) |
 
 ### 10.2 · MVP Definition (Phase 1–3, 12 Weeks)
@@ -593,6 +667,8 @@ The MVP is a functional web dashboard that a Filipino investor can use to replac
 - [x] Glass Box: Monte Carlo simulation (1,000 paths, client-side)
 - [x] Fee analyzer with 10-year compound cost projection
 - [x] Real-return calculator (nominal vs. CPI-adjusted)
+- [x] Contextual financial literacy cards for risk, fees, inflation, and diversification
+- [x] AI advisor plain-language explain mode with PH examples
 - [x] Performance history with monthly breakdown
 - [x] Settings & profile management
 - [x] Enterprise terminal-grade UI (dark theme first, light theme available)
@@ -604,6 +680,7 @@ The MVP is a functional web dashboard that a Filipino investor can use to replac
 | Sandbox simulator | Important but not launch-blocking — users need the dashboard before they need hypotheticals |
 | Alert system | Requires web push infrastructure; users need to see their data before they set thresholds |
 | RAG knowledge base | Smart prompting covers 90% of value; RAG adds retrieval precision but needs a curated corpus first |
+| Full course-style financial academy | High content and compliance overhead; start with contextual literacy in real workflows first |
 | Automated broker sync | COL Financial has no API; BSP Open Finance is still maturing |
 | Mobile app | Web-first confirms product-market fit before investing in native mobile |
 | Emergency access | HNI feature — defer until that user segment is validated |
@@ -616,8 +693,8 @@ The MVP is a functional web dashboard that a Filipino investor can use to replac
 
 | Tier | Price | Limits | Features |
 |---|---|---|---|
-| **Free** | ₱0 | 10 assets, 20 AI queries/day, 1 CSV import/month | Dashboard, manual entry, basic charts, Glass Box (100 paths), fee analyzer |
-| **Pro** | ₱299–₱499/month | Unlimited assets, 100 AI queries/day, unlimited CSV imports | Full Monte Carlo (1,000 paths), performance history, export PDF/CSV, priority AI, multi-currency, alerts (V1.1) |
+| **Free** | ₱0 | 10 assets, 20 AI queries/day, 1 CSV import/month | Dashboard, manual entry, basic charts, Glass Box (100 paths), fee analyzer, core literacy cards |
+| **Pro** | ₱299–₱499/month | Unlimited assets, 100 AI queries/day, unlimited CSV imports | Full Monte Carlo (1,000 paths), performance history, export PDF/CSV, priority AI, multi-currency, alerts (V1.1), advanced explainers and guided literacy mode |
 
 ### Revenue Math (Conservative)
 
@@ -644,6 +721,9 @@ Payment processing: **Stripe** (available in PH via Stripe Atlas or through PayM
 | **Avg. session duration** | > 5 minutes | PostHog |
 | **AI advisor usage** | > 3 queries/session average | API route analytics |
 | **CSV imports completed** | > 500 total | Audit log count |
+| **Literacy card engagement** | > 35% of WAU open at least 1 explainer/week | PostHog custom events |
+| **Concept comprehension lift** | +20% improvement from onboarding quiz to 30-day check-in | In-app literacy checkpoints |
+| **Literacy helpfulness score** | >= 4.2/5 average | In-app thumbs-up/down + optional 5-point rating |
 | **NPS score** | > 40 | In-app survey (quarterly) |
 | **Dashboard load time** | < 2 seconds (P95) | Vercel Analytics |
 | **API error rate** | < 0.5% | Sentry |
@@ -661,6 +741,8 @@ Payment processing: **Stripe** (available in PH via Stripe Atlas or through PayM
 | 3 | PayMongo vs. Stripe for PH payment processing? | Stripe (broader feature set, subscription billing built-in) | If Stripe PH onboarding is blocked — PayMongo is the fallback |
 | 4 | PSE Edge data access — free tier sufficient? | Yes (delayed data acceptable for portfolio tracking) | If users demand real-time for active PSE positions |
 | 5 | BIR zonal value API — does a public one exist? | No reliable API — use a static lookup table from BIR published data, updated annually | If BIR publishes an open data API |
+| 6 | Should literacy default language be English, Taglish, or adaptive? | English default with user-selectable Taglish mode | After first 200 active users and feedback review |
+| 7 | Should literacy cards include quick comprehension checks in MVP or V1.1? | V1.1 to avoid onboarding friction in initial launch | If comprehension lift metric is below +10% by month 2 |
 
 ### Risks & Mitigations
 
@@ -669,6 +751,7 @@ Payment processing: **Stripe** (available in PH via Stripe Atlas or through PayM
 | PSE Edge changes free tier terms | Medium | High | Cache aggressively, fallback to Yahoo Finance PH data |
 | CoinGecko rate limits on free tier | Medium | Medium | 5-minute cache, upgrade to paid when revenue covers it |
 | AI advisor gives incorrect financial advice | Medium | High | Mandatory disclaimer on every response, confidence scoring, no auto-execution |
+| Literacy content becomes generic or inaccurate | Medium | High | Editorial review workflow, cited PH sources, quarterly content QA with domain advisor |
 | Low conversion from Free to Pro | High | High | Ensure free tier is useful enough to retain but limited enough to motivate upgrade |
 | BSP Open Finance delays | High | Low | Not a dependency for MVP — CSV + manual entry is the launch strategy |
 | Solo developer burnout on 12-week timeline | Medium | Critical | Ruthless MVP scope — cut any feature that isn't in the Phase 1–3 table |
@@ -714,6 +797,8 @@ Skills from `.agent/skills/skills/[skill-id]/SKILL.md` the implementing agent sh
 | `ai-wrapper-product` | AI advisor architecture — system prompts, cost management, rate limiting, caching |
 | `ai-product` | LLM integration patterns, streaming UI, structured output, guardrails |
 | `prompt-engineer` | System prompt design for financial advisor with portfolio context injection |
+| `copywriting` | Plain-language explanation quality for finance concepts without losing precision |
+| `i18n-localization` | English/Taglish literacy delivery strategy and terminology consistency |
 | `clean-code` | Code quality for math-heavy Glass Box module — readable, testable |
 | `testing-patterns` | Unit tests for Monte Carlo, variance calculation, fee analyzer math |
 | `tdd-workflow` | Test-driven development for financial calculations (correctness is critical) |

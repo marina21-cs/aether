@@ -1,16 +1,22 @@
 import { Outlet } from "react-router-dom";
 import { useAuth, useUser } from "@clerk/react";
-import { useEffect, useState, useCallback, createContext, useContext } from "react";
+import { useEffect, useState, useCallback, createContext, useContext, useRef } from "react";
 import { Sidebar } from "@/src/components/layout/sidebar";
 import { GlowBlobs } from "@/src/components/layout/glow-blobs";
 import { RightRail } from "@/src/components/layout/right-rail";
-import { createAuthClient, supabase } from "@/src/lib/supabase/client";
+import { createAuthClient } from "@/src/lib/supabase/client";
 import { UserButton } from "@clerk/react";
 import { useExchangeRate } from "@/src/hooks/use-exchange-rate";
 import { useCryptoPrices } from "@/src/hooks/use-crypto-prices";
-import { cn } from "@/src/lib/utils";
+import { apiUrl } from "@/src/lib/api/client";
 import type { Asset } from "@/src/types/database";
 import { MessageSquare } from "lucide-react";
+import { CurrencySwitcher } from "@/src/components/currency/currency-switcher";
+import {
+  convertFromNativeToDisplay,
+  currencySymbol,
+  type DisplayCurrency,
+} from "@/src/lib/currency/converter";
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -92,13 +98,39 @@ function mapAssetToHolding(asset: Asset): Holding {
   };
 }
 
+async function parseApiPayload(response: Response): Promise<unknown> {
+  const raw = await response.text();
+  if (!raw.trim()) return null;
+
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw;
+  }
+}
+
+function extractApiErrorMessage(payload: unknown, fallback: string): string {
+  if (payload && typeof payload === "object" && "error" in payload) {
+    const message = (payload as { error?: { message?: string } }).error?.message;
+    if (typeof message === "string" && message.trim().length > 0) {
+      return message;
+    }
+  }
+
+  if (typeof payload === "string" && payload.trim().length > 0) {
+    return payload.slice(0, 240);
+  }
+
+  return fallback;
+}
+
 // ─── Dashboard Context ───────────────────────────────────
 
 interface DashboardContextValue {
   holdings: Holding[];
   setHoldings: React.Dispatch<React.SetStateAction<Holding[]>>;
-  displayCurrency: "PHP" | "USD";
-  setDisplayCurrency: (c: "PHP" | "USD") => void;
+  displayCurrency: DisplayCurrency;
+  setDisplayCurrency: (c: DisplayCurrency) => void;
   usdToPhp: number;
   fxRates: DashboardFxRates | null;
   fxStatus: "fresh" | "stale" | "loading";
@@ -168,48 +200,6 @@ function PHClock() {
   );
 }
 
-// ─── Currency Toggle ─────────────────────────────────────
-
-function CurrencyToggle({
-  value,
-  onChange,
-}: {
-  value: "PHP" | "USD";
-  onChange: (c: "PHP" | "USD") => void;
-}) {
-  return (
-    <div
-      className="flex h-8 items-center rounded-full p-0.5"
-      style={{ backgroundColor: "rgba(255,255,255,0.06)" }}
-    >
-      <button
-        onClick={() => onChange("PHP")}
-        className={cn(
-          "h-7 rounded-full px-3 text-xs font-medium transition-all duration-200",
-          value === "PHP"
-            ? "bg-accent-primary text-[#09090B]"
-            : "text-text-muted hover:text-text-primary"
-        )}
-        style={{ fontFamily: "JetBrains Mono, monospace" }}
-      >
-        ₱ PHP
-      </button>
-      <button
-        onClick={() => onChange("USD")}
-        className={cn(
-          "h-7 rounded-full px-3 text-xs font-medium transition-all duration-200",
-          value === "USD"
-            ? "bg-accent-secondary text-white"
-            : "text-text-muted hover:text-text-primary"
-        )}
-        style={{ fontFamily: "JetBrains Mono, monospace" }}
-      >
-        $ USD
-      </button>
-    </div>
-  );
-}
-
 // ─── Main Layout ─────────────────────────────────────────
 
 export default function DashboardLayout() {
@@ -217,9 +207,11 @@ export default function DashboardLayout() {
   const { getToken } = useAuth();
   const [checkingOnboarding, setCheckingOnboarding] = useState(true);
   const [holdings, setHoldings] = useState<Holding[]>([]);
-  const [displayCurrency, setDisplayCurrency] = useState<"PHP" | "USD">("PHP");
+  const [displayCurrency, setDisplayCurrency] = useState<DisplayCurrency>("PHP");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [advisorOpen, setAdvisorOpen] = useState(false);
+  const lastHydratedUserIdRef = useRef<string | null>(null);
+  const completedHydrationUserIdRef = useRef<string | null>(null);
 
   const {
     usdToPhp,
@@ -235,56 +227,116 @@ export default function DashboardLayout() {
   } = useCryptoPrices();
 
   useEffect(() => {
-    if (!isLoaded || !user) return;
+    if (!isLoaded) return;
+
+    if (!user) {
+      setCheckingOnboarding(false);
+      setHoldings([]);
+      lastHydratedUserIdRef.current = null;
+      completedHydrationUserIdRef.current = null;
+      return;
+    }
+
+    let cancelled = false;
     const userId = user.id;
 
+    if (lastHydratedUserIdRef.current !== userId) {
+      // Prevent stale holdings from a previous account while new account data is loading.
+      setHoldings([]);
+      lastHydratedUserIdRef.current = userId;
+      completedHydrationUserIdRef.current = null;
+    }
+
+    if (completedHydrationUserIdRef.current === userId) {
+      setCheckingOnboarding(false);
+      return;
+    }
+
     async function hydrateDashboardState() {
+      setCheckingOnboarding(true);
       try {
-        await supabase
-          .from("profiles")
-          .select("onboarding_complete")
-          .eq("id", userId)
-          .single();
+        let hydratedAssets: Asset[] | null = null;
 
-        const token = (await getToken({ template: "supabase" })) || (await getToken());
-        if (!token) return;
+        try {
+          const token = (await getToken({ template: "supabase" })) || (await getToken());
+          if (token) {
+            const authClient = createAuthClient(token);
+            const { data, error } = await authClient
+              .from("assets")
+              .select("*")
+              .eq("user_id", userId)
+              .order("updated_at", { ascending: false });
 
-        const authClient = createAuthClient(token);
-        const { data: assets } = await authClient
-          .from("assets")
-          .select("*")
-          .eq("user_id", userId)
-          .order("updated_at", { ascending: false });
+            if (error) {
+              throw error;
+            }
 
-        if (Array.isArray(assets)) {
-          setHoldings((assets as Asset[]).map(mapAssetToHolding));
+            if (Array.isArray(data)) {
+              hydratedAssets = data as Asset[];
+            }
+          }
+        } catch {
+          // Fallback to backend API below when direct Supabase read is unavailable.
+        }
+
+        if (!hydratedAssets) {
+          const response = await fetch(
+            apiUrl(`/api/v1/data/assets?userId=${encodeURIComponent(userId)}`)
+          );
+          const payload = await parseApiPayload(response);
+
+          if (!response.ok) {
+            throw new Error(
+              extractApiErrorMessage(payload, "Failed to load saved holdings.")
+            );
+          }
+
+          const assets =
+            payload && typeof payload === "object" && "assets" in payload
+              ? (payload as { assets?: Asset[] }).assets
+              : null;
+
+          hydratedAssets = Array.isArray(assets) ? assets : [];
+        }
+
+        if (!cancelled) {
+          setHoldings(hydratedAssets.map(mapAssetToHolding));
         }
       } catch {
-        // If Supabase fails, keep current in-memory data and still allow dashboard access.
+        if (!cancelled) {
+          // Keep dashboard usable but avoid showing stale cross-account data.
+          setHoldings([]);
+        }
       } finally {
-        setCheckingOnboarding(false);
+        if (!cancelled) {
+          completedHydrationUserIdRef.current = userId;
+          setCheckingOnboarding(false);
+        }
       }
     }
 
     hydrateDashboardState();
+
+    return () => {
+      cancelled = true;
+    };
   }, [user, isLoaded, getToken]);
 
   // ─── Conversion helpers ────────────────────
 
   const toDisplay = useCallback(
     (amount: number, fromCurrency: "PHP" | "USD") => {
-      if (displayCurrency === "PHP") {
-        return fromCurrency === "USD" ? amount * usdToPhp : amount;
-      } else {
-        return fromCurrency === "PHP" ? amount / usdToPhp : amount;
-      }
+      return convertFromNativeToDisplay(amount, fromCurrency, displayCurrency, {
+        PHP: fxRates?.PHP ?? usdToPhp,
+        SGD: fxRates?.SGD ?? 1.34,
+      });
     },
-    [displayCurrency, usdToPhp]
+    [displayCurrency, fxRates, usdToPhp]
   );
 
   const formatDisplay = useCallback(
     (amount: number) => {
-      const prefix = displayCurrency === "PHP" ? "₱" : "$";
+      const prefix = currencySymbol(displayCurrency);
       if (Math.abs(amount) >= 1_000_000) {
         return `${prefix}${(amount / 1_000_000).toFixed(2)}M`;
       }
@@ -430,7 +482,7 @@ export default function DashboardLayout() {
                 <MessageSquare size={14} className="text-accent-primary" aria-hidden="true" />
                 AI Chat
               </button>
-              <CurrencyToggle value={displayCurrency} onChange={setDisplayCurrency} />
+              <CurrencySwitcher value={displayCurrency} onChange={setDisplayCurrency} />
               <UserButton
                 appearance={{
                   elements: {

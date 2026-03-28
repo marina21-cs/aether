@@ -4,6 +4,10 @@ import { Activity, ArrowRight, BarChart3, Wallet } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { useDashboard, type Holding } from "./DashboardLayout";
 import { TRACKED_CRYPTO_TICKERS } from "@/src/lib/market-universe";
+import {
+  ContextualLiteracyPanel,
+  GlossaryTerm,
+} from "@/feature/phase_1_contextual_literacy";
 
 const TYPE_COLORS: Record<Holding["type"], string> = {
   "PH Stocks": "#6EE7B7",
@@ -124,6 +128,23 @@ export default function DashboardPage() {
     return [...rows].sort((a, b) => b.pnlPercent - a.pnlPercent)[0];
   }, [rows]);
 
+  const totalPortfolioValue = useMemo(() => getTotalPortfolio(), [getTotalPortfolio]);
+
+  const liveCoveragePct = useMemo(() => {
+    if (rows.length === 0) return 0;
+    return ((rows.length - manualPricedCount) / rows.length) * 100;
+  }, [rows.length, manualPricedCount]);
+
+  const topAllocationPct = useMemo(() => {
+    if (allocation.length === 0) return 0;
+    return allocation.reduce((maxPercent, bucket) => Math.max(maxPercent, bucket.percent), 0);
+  }, [allocation]);
+
+  const inflationDragEstimate = useMemo(
+    () => totalPortfolioValue * 0.042,
+    [totalPortfolioValue]
+  );
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
@@ -131,8 +152,26 @@ export default function DashboardPage() {
           Dashboard
         </span>
         <h1 className="font-display text-[2.25rem] font-bold text-text-primary">Portfolio Overview</h1>
-        <p className="font-body text-sm text-text-muted">Simplified summary with live market pulse and top positions.</p>
+        <p className="font-body text-sm text-text-muted">
+          Simplified summary with live market pulse and top positions. Track{" "}
+          <GlossaryTerm term="asset allocation" /> and protect against{" "}
+          <GlossaryTerm term="inflation drag" />.
+        </p>
       </div>
+
+      <ContextualLiteracyPanel
+        context="dashboard"
+        signals={{
+          totalPortfolioValue,
+          holdingsCount: rows.length,
+          liveCoveragePct,
+          topAllocationPct,
+          dailyPnl: totalPnl,
+        }}
+        metricLabel="Estimated yearly inflation drag"
+        metricValue={formatDisplay(inflationDragEstimate)}
+        metricExplanation="If your portfolio grows slower than inflation, this is the rough buying-power loss over one year."
+      />
 
       <section className="glass-panel card-fade-in rounded-[16px] p-5" style={{ animationDelay: "40ms" }}>
         <div className="mb-3 flex items-center justify-between gap-3">
@@ -192,7 +231,7 @@ export default function DashboardPage() {
         <div className="glass-panel card-fade-in rounded-[16px] p-5" style={{ animationDelay: "80ms" }}>
           <p className="font-body text-xs uppercase tracking-[0.08em] text-text-muted">Total Portfolio</p>
           <p className="mt-2 text-right text-2xl font-bold text-text-primary tabular-nums" style={{ fontFamily: "JetBrains Mono, monospace" }}>
-            {formatDisplay(getTotalPortfolio())}
+            {formatDisplay(totalPortfolioValue)}
           </p>
         </div>
 
