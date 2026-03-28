@@ -6,6 +6,7 @@ import {
   updateUserSettings,
   type UserSettingsResponse,
 } from "@/src/lib/api/phase3";
+import { useDashboard } from "./DashboardLayout";
 
 type RiskTolerance = "conservative" | "moderate" | "aggressive";
 type BaseCurrency = "PHP" | "USD" | "SGD" | "HKD";
@@ -32,6 +33,7 @@ const CURRENCY_OPTIONS: BaseCurrency[] = ["PHP", "USD", "SGD", "HKD"];
 
 export function Settings() {
   const { user } = useUser();
+  const { startGuidedTour } = useDashboard();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -108,9 +110,9 @@ export function Settings() {
   };
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 animate-in fade-in duration-500">
+    <div className="mx-auto max-w-5xl animate-in space-y-5 px-1 fade-in duration-500 sm:space-y-6 sm:px-0">
       <header>
-        <h1 className="font-display text-3xl font-bold text-white">Settings & Profile</h1>
+        <h1 className="font-display text-2xl font-bold text-white sm:text-3xl">Settings & Profile</h1>
         <p className="mt-1 text-sm text-text-secondary">
           Update risk profile and base currency used across dashboard analytics.
         </p>
@@ -122,8 +124,8 @@ export function Settings() {
         </div>
       )}
 
-      <section className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <article className="glass-panel rounded-2xl border border-glass-border p-6">
+      <section className="grid grid-cols-1 gap-5 lg:grid-cols-3 lg:gap-6">
+        <article className="glass-panel rounded-2xl border border-glass-border p-4 sm:p-6">
           <h2 className="mb-4 flex items-center font-display text-lg font-bold text-text-primary">
             <User className="mr-2 h-5 w-5 text-accent-primary" />
             Account
@@ -142,9 +144,26 @@ export function Settings() {
               Loading status: <span className="text-text-primary">{loading ? "syncing" : "ready"}</span>
             </p>
           </div>
+
+          <div
+            className="mt-4 rounded-xl border border-accent-secondary/30 bg-accent-secondary/10 p-3"
+            data-tour="settings-tutorial-toggle"
+          >
+            <p className="text-xs uppercase tracking-[0.08em] text-accent-secondary">Tutorial Mode</p>
+            <p className="mt-1 text-xs text-text-secondary">
+              Re-run the guided tour anytime to review navigation and core controls.
+            </p>
+            <button
+              type="button"
+              onClick={startGuidedTour}
+              className="motion-tap mt-3 inline-flex h-11 w-full items-center justify-center rounded-lg border border-accent-secondary/50 bg-bg-surface px-3 text-sm font-semibold text-text-primary hover:bg-accent-secondary/10"
+            >
+              Start Tutorial Mode
+            </button>
+          </div>
         </article>
 
-        <article className="glass-panel rounded-2xl border border-glass-border p-6 lg:col-span-2">
+        <article className="glass-panel rounded-2xl border border-glass-border p-4 sm:p-6 lg:col-span-2">
           <h2 className="mb-4 flex items-center font-display text-lg font-bold text-text-primary">
             <Shield className="mr-2 h-5 w-5 text-accent-secondary" />
             Portfolio Preferences
@@ -180,7 +199,7 @@ export function Settings() {
                     key={currency}
                     type="button"
                     onClick={() => setBaseCurrency(currency)}
-                    className={`rounded-full border px-4 py-1.5 text-sm transition-colors ${
+                    className={`h-11 rounded-full border px-4 text-sm transition-colors ${
                       baseCurrency === currency
                         ? "border-accent-primary/50 bg-accent-subtle text-text-primary"
                         : "border-glass-border bg-bg-surface text-text-secondary hover:text-text-primary"
@@ -197,7 +216,7 @@ export function Settings() {
                 type="button"
                 onClick={saveChanges}
                 disabled={!hasChanges || saving || loading}
-                className="rounded-lg bg-accent-primary px-5 py-2 text-sm font-semibold text-[#09090B] disabled:cursor-not-allowed disabled:opacity-60"
+                className="motion-tap h-11 rounded-lg bg-accent-primary px-5 text-sm font-semibold text-[#09090B] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {saving ? "Saving..." : "Save Changes"}
               </button>

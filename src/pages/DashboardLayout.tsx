@@ -13,6 +13,7 @@ import type { Asset } from "@/src/types/database";
 import { Brain, FileText, LayoutDashboard, Menu, MessageSquare, PieChart } from "lucide-react";
 import { CurrencySwitcher } from "@/src/components/currency/currency-switcher";
 import { cn } from "@/src/lib/utils";
+import { GuidedTour, type GuidedTourStep } from "@/src/components/shared/guided-tour";
 import {
   convertFromNativeToDisplay,
   currencySymbol,
@@ -40,11 +41,141 @@ interface DashboardFxRates {
 }
 
 const mobilePrimaryNav = [
-  { to: "/dashboard", label: "Home", icon: LayoutDashboard, end: true },
-  { to: "/dashboard/holdings", label: "Holdings", icon: PieChart },
-  { to: "/dashboard/data", label: "Import", icon: FileText },
-  { to: "/dashboard/advisor", label: "Advisor", icon: Brain },
+  { to: "/dashboard", label: "Home", icon: LayoutDashboard, end: true, tour: "mobile-tab-home" },
+  { to: "/dashboard/holdings", label: "Holdings", icon: PieChart, tour: "mobile-tab-holdings" },
+  { to: "/dashboard/data", label: "Import", icon: FileText, tour: "mobile-tab-import" },
+  { to: "/dashboard/advisor", label: "Advisor", icon: Brain, tour: "mobile-tab-advisor" },
 ] as const;
+
+const DESKTOP_GUIDED_TOUR_STEPS: GuidedTourStep[] = [
+  {
+    id: "tour-desktop-dashboard",
+    title: "Dashboard Home",
+    description: "Use this navigation item to return to your portfolio overview and key insights.",
+    target: '[data-tour="nav-dashboard"]',
+    placement: "right",
+  },
+  {
+    id: "tour-desktop-holdings",
+    title: "Holdings",
+    description: "Manage and inspect every position in one place, including performance and allocation details.",
+    target: '[data-tour="nav-holdings"]',
+    placement: "right",
+  },
+  {
+    id: "tour-desktop-import",
+    title: "Data Import",
+    description: "Import CSV or mock data here and review parsed results before confirming changes.",
+    target: '[data-tour="nav-data-import"]',
+    placement: "right",
+  },
+  {
+    id: "tour-desktop-advisor",
+    title: "AI Advisor",
+    description: "Access advisor guidance and portfolio context to help with decisions.",
+    target: '[data-tour="nav-advisor"]',
+    placement: "right",
+  },
+  {
+    id: "tour-desktop-total",
+    title: "Portfolio Total",
+    description: "This area tracks your current total portfolio value in your selected display currency.",
+    target: '[data-tour="top-total-portfolio"]',
+    placement: "bottom",
+  },
+  {
+    id: "tour-desktop-chat",
+    title: "Quick AI Chat",
+    description: "Open this to ask questions without leaving your current screen.",
+    target: '[data-tour="top-ai-chat"]',
+    placement: "bottom",
+  },
+  {
+    id: "tour-desktop-currency",
+    title: "Currency Switcher",
+    description: "Switch display currency instantly across dashboard analytics and summaries.",
+    target: '[data-tour="top-currency-switcher"]',
+    placement: "bottom",
+  },
+  {
+    id: "tour-desktop-profile",
+    title: "Profile Menu",
+    description: "Manage your account session and profile actions from this menu.",
+    target: '[data-tour="top-user-menu"]',
+    placement: "bottom",
+  },
+  {
+    id: "tour-desktop-settings-tip",
+    title: "Re-open Tutorial Anytime",
+    description: "Need a refresher? Open Settings and tap Start Tutorial Mode whenever you want.",
+    placement: "center",
+  },
+];
+
+const MOBILE_GUIDED_TOUR_STEPS: GuidedTourStep[] = [
+  {
+    id: "tour-mobile-menu",
+    title: "Navigation Menu",
+    description: "Tap here to open the full sidebar navigation on mobile.",
+    target: '[data-tour="top-open-nav"]',
+    placement: "bottom",
+  },
+  {
+    id: "tour-mobile-home",
+    title: "Home Tab",
+    description: "Use the bottom tabs for quick navigation between the most used sections.",
+    target: '[data-tour="mobile-tab-home"]',
+    placement: "top",
+  },
+  {
+    id: "tour-mobile-holdings",
+    title: "Holdings Tab",
+    description: "Open your positions list, pricing, and allocation details.",
+    target: '[data-tour="mobile-tab-holdings"]',
+    placement: "top",
+  },
+  {
+    id: "tour-mobile-import",
+    title: "Import Tab",
+    description: "Import your data or mock files without leaving the app.",
+    target: '[data-tour="mobile-tab-import"]',
+    placement: "top",
+  },
+  {
+    id: "tour-mobile-advisor",
+    title: "Advisor Tab",
+    description: "Jump to AI advisor tools and recommendations.",
+    target: '[data-tour="mobile-tab-advisor"]',
+    placement: "top",
+  },
+  {
+    id: "tour-mobile-chat",
+    title: "AI Chat Shortcut",
+    description: "This button opens quick advisor chat from any dashboard screen.",
+    target: '[data-tour="top-ai-chat"]',
+    placement: "bottom",
+  },
+  {
+    id: "tour-mobile-currency",
+    title: "Currency Control",
+    description: "Switch currencies here to compare values in your preferred display.",
+    target: '[data-tour="top-currency-switcher"]',
+    placement: "bottom",
+  },
+  {
+    id: "tour-mobile-profile",
+    title: "Profile",
+    description: "Open your user menu for account actions.",
+    target: '[data-tour="top-user-menu"]',
+    placement: "bottom",
+  },
+  {
+    id: "tour-mobile-settings-tip",
+    title: "Tutorial Mode",
+    description: "Returning users can activate this walkthrough again anytime from Settings.",
+    placement: "center",
+  },
+];
 
 function mapAssetClassToHoldingType(assetClass: string): Holding["type"] {
   if (assetClass === "pse_stock") return "PH Stocks";
@@ -166,6 +297,8 @@ interface DashboardContextValue {
   /** Sidebar collapsed state */
   sidebarCollapsed: boolean;
   setSidebarCollapsed: (v: boolean) => void;
+  /** Launch the guided onboarding/tutorial flow */
+  startGuidedTour: () => void;
 }
 
 const DashboardContext = createContext<DashboardContextValue | null>(null);
@@ -220,8 +353,10 @@ export default function DashboardLayout() {
   const [advisorOpen, setAdvisorOpen] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [guidedTourOpen, setGuidedTourOpen] = useState(false);
   const lastHydratedUserIdRef = useRef<string | null>(null);
   const completedHydrationUserIdRef = useRef<string | null>(null);
+  const guidedTourStorageKey = user?.id ? `aether:dashboard-tour-seen:${user.id}` : null;
 
   const {
     usdToPhp,
@@ -369,6 +504,31 @@ export default function DashboardLayout() {
     return () => mediaQuery.removeListener(syncViewportMode);
   }, []);
 
+  const startGuidedTour = useCallback(() => {
+    setSidebarCollapsed(false);
+    setMobileSidebarOpen(false);
+    setGuidedTourOpen(true);
+  }, []);
+
+  const markGuidedTourSeen = useCallback(() => {
+    if (!guidedTourStorageKey) return;
+    window.localStorage.setItem(guidedTourStorageKey, "1");
+  }, [guidedTourStorageKey]);
+
+  useEffect(() => {
+    if (!isLoaded || !user?.id || !guidedTourStorageKey) return;
+
+    const alreadySeen = window.localStorage.getItem(guidedTourStorageKey) === "1";
+    if (!alreadySeen) {
+      startGuidedTour();
+    }
+  }, [guidedTourStorageKey, isLoaded, startGuidedTour, user?.id]);
+
+  const guidedTourSteps = useMemo(
+    () => (isMobileViewport ? MOBILE_GUIDED_TOUR_STEPS : DESKTOP_GUIDED_TOUR_STEPS),
+    [isMobileViewport]
+  );
+
   // ─── Conversion helpers ────────────────────
 
   const toDisplay = useCallback(
@@ -467,6 +627,7 @@ export default function DashboardLayout() {
     getTotalPortfolio,
     sidebarCollapsed,
     setSidebarCollapsed,
+    startGuidedTour,
   };
 
   if (!isLoaded || checkingOnboarding) {
@@ -527,13 +688,14 @@ export default function DashboardLayout() {
                 <button
                   type="button"
                   onClick={() => setMobileSidebarOpen(true)}
+                  data-tour="top-open-nav"
                   className="motion-tap inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-glass-border bg-bg-surface text-text-primary transition-colors hover:border-border-accent hover:bg-white/5"
                   aria-label="Open navigation"
                 >
                   <Menu size={16} aria-hidden="true" />
                 </button>
               )}
-              <div>
+              <div data-tour="top-total-portfolio">
                 <p className="text-xs font-medium text-text-muted">Total Portfolio</p>
                 <p
                   className="currency-fade tabular-nums text-base font-bold text-text-primary sm:text-xl"
@@ -552,20 +714,25 @@ export default function DashboardLayout() {
               <button
                 type="button"
                 onClick={() => setAdvisorOpen(true)}
+                data-tour="top-ai-chat"
                 className="motion-tap inline-flex h-11 items-center gap-2 rounded-full border border-glass-border bg-bg-surface px-2.5 text-xs font-medium text-text-primary transition-colors hover:border-border-accent hover:bg-white/5 sm:px-3"
                 aria-label="Open AI Advisor"
               >
                 <MessageSquare size={14} className="text-accent-primary" aria-hidden="true" />
                 <span className="hidden sm:inline">AI Chat</span>
               </button>
-              <CurrencySwitcher value={displayCurrency} onChange={setDisplayCurrency} />
-              <UserButton
-                appearance={{
-                  elements: {
-                    avatarBox: "w-11 h-11",
-                  },
-                }}
-              />
+              <div data-tour="top-currency-switcher">
+                <CurrencySwitcher value={displayCurrency} onChange={setDisplayCurrency} />
+              </div>
+              <div data-tour="top-user-menu">
+                <UserButton
+                  appearance={{
+                    elements: {
+                      avatarBox: "w-11 h-11",
+                    },
+                  }}
+                />
+              </div>
             </div>
           </div>
 
@@ -584,6 +751,7 @@ export default function DashboardLayout() {
                   key={item.to}
                   to={item.to}
                   end={item.end}
+                  data-tour={item.tour}
                   className={({ isActive }) =>
                     cn(
                       "motion-tap flex h-full flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors duration-200",
@@ -598,6 +766,19 @@ export default function DashboardLayout() {
             </div>
           </nav>
         )}
+
+        <GuidedTour
+          open={guidedTourOpen}
+          steps={guidedTourSteps}
+          onClose={() => {
+            setGuidedTourOpen(false);
+            markGuidedTourSeen();
+          }}
+          onFinish={() => {
+            setGuidedTourOpen(false);
+            markGuidedTourSeen();
+          }}
+        />
 
         <RightRail isOpen={advisorOpen} onClose={() => setAdvisorOpen(false)} />
       </div>

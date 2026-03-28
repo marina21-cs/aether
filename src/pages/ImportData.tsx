@@ -1103,8 +1103,8 @@ export function ImportData() {
             CSV + AI Import Pipeline
           </h2>
 
-          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 sm:gap-3 xl:grid-cols-3">
-            <label className="motion-tap flex min-h-[44px] w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-glass-border bg-bg-surface px-4 py-3 text-sm text-text-primary hover:bg-white/5">
+          <div className="grid grid-cols-1 items-start gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <label className="motion-tap flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-glass-border bg-bg-surface px-4 text-sm text-text-primary hover:bg-white/5 md:col-span-1 xl:col-span-1">
               <FileSpreadsheet className="h-4 w-4" /> Upload CSV
               <input
                 type="file"
@@ -1115,8 +1115,8 @@ export function ImportData() {
               />
             </label>
 
-            <div className="rounded-xl border border-glass-border bg-bg-surface p-2 sm:col-span-2 xl:col-span-1">
-              <div className="flex flex-col gap-2 sm:flex-row">
+            <div className="rounded-xl border border-glass-border bg-bg-surface p-2 md:col-span-2 xl:col-span-2">
+              <div className="flex flex-col gap-2">
                 <select
                   value={selectedMockDownload}
                   disabled={busy || downloadingMock || importingMock}
@@ -1124,7 +1124,7 @@ export function ImportData() {
                     const nextFile = event.target.value as MockDownloadFile;
                     setSelectedMockDownload(nextFile);
                   }}
-                  className="h-11 min-w-0 flex-1 rounded-md border border-glass-border bg-bg-dark px-2 text-xs text-text-primary focus:border-accent-primary/60 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                  className="h-11 w-full min-w-0 rounded-md border border-glass-border bg-bg-dark px-2 text-xs text-text-primary focus:border-accent-primary/60 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {MOCK_DOWNLOAD_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>
@@ -1132,22 +1132,24 @@ export function ImportData() {
                     </option>
                   ))}
                 </select>
-                <button
-                  type="button"
-                  disabled={busy || downloadingMock || importingMock}
-                  onClick={() => void onDownloadSelectedMock()}
-                  className="motion-tap inline-flex h-11 shrink-0 items-center justify-center gap-1 rounded-md border border-glass-border bg-bg-dark px-2.5 text-xs text-text-primary hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <Download className="h-3.5 w-3.5" /> {downloadingMock ? "Downloading..." : "Download"}
-                </button>
-                <button
-                  type="button"
-                  disabled={busy || downloadingMock || importingMock}
-                  onClick={() => void onImportSelectedMock()}
-                  className="motion-tap inline-flex h-11 shrink-0 items-center justify-center gap-1 rounded-md border border-accent-primary/40 bg-accent-subtle px-2.5 text-xs font-semibold text-accent-primary hover:bg-accent-subtle/80 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <Upload className="h-3.5 w-3.5" /> {importingMock ? "Importing..." : "Import Mock"}
-                </button>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+                  <button
+                    type="button"
+                    disabled={busy || downloadingMock || importingMock}
+                    onClick={() => void onDownloadSelectedMock()}
+                    className="motion-tap inline-flex h-11 w-full items-center justify-center gap-1 whitespace-nowrap rounded-md border border-glass-border bg-bg-dark px-2.5 text-xs text-text-primary hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <Download className="h-3.5 w-3.5" /> {downloadingMock ? "Downloading..." : "Download"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy || downloadingMock || importingMock}
+                    onClick={() => void onImportSelectedMock()}
+                    className="motion-tap inline-flex h-11 w-full items-center justify-center gap-1 whitespace-nowrap rounded-md border border-accent-primary/40 bg-accent-subtle px-2.5 text-xs font-semibold text-accent-primary hover:bg-accent-subtle/80 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <Upload className="h-3.5 w-3.5" /> {importingMock ? "Importing..." : "Import Mock"}
+                  </button>
+                </div>
               </div>
               <p className="mt-1 px-1 text-[11px] text-text-muted">
                 Choose a mock file, then either download it or import it directly into the review queue.
@@ -1158,7 +1160,7 @@ export function ImportData() {
               type="button"
               disabled={busy || importingMock || downloadingMock}
               onClick={onLoadFromSupabase}
-              className="motion-tap w-full rounded-xl border border-glass-border bg-bg-surface px-4 py-3 text-sm text-text-primary hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60"
+              className="motion-tap h-11 w-full rounded-xl border border-glass-border bg-bg-surface px-4 text-sm text-text-primary hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60 md:col-span-1 xl:col-span-1"
             >
               Load From Supabase
             </button>

@@ -1,5 +1,4 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { useState } from "react";
 import {
   LayoutDashboard,
   PieChart,
@@ -38,6 +37,20 @@ const settingsNav = [
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
 
+const NAV_TOUR_TARGETS: Record<string, string> = {
+  "/dashboard": "nav-dashboard",
+  "/dashboard/holdings": "nav-holdings",
+  "/dashboard/market": "nav-market",
+  "/dashboard/data": "nav-data-import",
+  "/dashboard/advisor": "nav-advisor",
+  "/dashboard/glass-box": "nav-glass-box",
+  "/dashboard/simulator": "nav-simulator",
+  "/dashboard/fees": "nav-fee-analyzer",
+  "/dashboard/performance": "nav-performance",
+  "/dashboard/alerts": "nav-alerts",
+  "/dashboard/settings": "nav-settings",
+};
+
 function NavSection({
   label,
   items,
@@ -64,6 +77,7 @@ function NavSection({
           <NavLink
             key={item.href}
             to={item.href}
+            data-tour={NAV_TOUR_TARGETS[item.href]}
             title={collapsed ? item.label : undefined}
             onClick={onNavigate}
             className={cn(
