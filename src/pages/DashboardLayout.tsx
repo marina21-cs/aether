@@ -1,4 +1,4 @@
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth, useUser } from "@clerk/react";
 import { useEffect, useState, useCallback, createContext, useContext, useRef } from "react";
 import { Sidebar } from "@/src/components/layout/sidebar";
@@ -344,6 +344,7 @@ function PHClock() {
 // ─── Main Layout ─────────────────────────────────────────
 
 export default function DashboardLayout() {
+  const location = useLocation();
   const { user, isLoaded } = useUser();
   const { getToken } = useAuth();
   const [checkingOnboarding, setCheckingOnboarding] = useState(true);
@@ -365,6 +366,10 @@ export default function DashboardLayout() {
     // Treat only recently-created accounts as auto-tour candidates.
     return Date.now() - createdAtMs < 1000 * 60 * 60 * 24 * 7;
   }, [user?.createdAt]);
+  const disableTourByQuery = useMemo(() => {
+    const params = new URLSearchParams(location.search);
+    return params.get("tour") === "off";
+  }, [location.search]);
 
   const {
     usdToPhp,
@@ -530,6 +535,12 @@ export default function DashboardLayout() {
   useEffect(() => {
     if (!isLoaded || !user?.id || !guidedTourStorageKey) return;
 
+    if (disableTourByQuery) {
+      setGuidedTourOpen(false);
+      markGuidedTourSeen();
+      return;
+    }
+
     let alreadySeen = true;
     try {
       alreadySeen = window.localStorage.getItem(guidedTourStorageKey) === "1";
@@ -545,7 +556,7 @@ export default function DashboardLayout() {
         markGuidedTourSeen();
       }
     }
-  }, [guidedTourStorageKey, isLikelyNewUser, isLoaded, markGuidedTourSeen, startGuidedTour, user?.id]);
+  }, [disableTourByQuery, guidedTourStorageKey, isLikelyNewUser, isLoaded, markGuidedTourSeen, startGuidedTour, user?.id]);
 
   const guidedTourSteps = useMemo(
     () => (isMobileViewport ? MOBILE_GUIDED_TOUR_STEPS : DESKTOP_GUIDED_TOUR_STEPS),

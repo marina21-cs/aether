@@ -188,12 +188,9 @@ export function GuidedTour({ open, steps, onClose, onFinish }: GuidedTourProps) 
             left: targetRect.left - 6,
             width: targetRect.width + 12,
             height: targetRect.height + 12,
-            boxShadow: "0 0 0 9999px rgba(4, 6, 12, 0.54)",
           }}
         />
-      ) : (
-        <div className="pointer-events-none fixed inset-0 z-[120] bg-[rgba(4,6,12,0.54)]" />
-      )}
+      ) : null}
 
       <button
         type="button"
