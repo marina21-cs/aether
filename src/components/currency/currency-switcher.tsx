@@ -11,7 +11,7 @@ interface CurrencySwitcherProps {
 export function CurrencySwitcher({ value, onChange }: CurrencySwitcherProps) {
   return (
     <div
-      className="flex h-8 items-center rounded-full p-0.5"
+      className="flex min-h-[44px] items-center rounded-full p-0.5"
       style={{ backgroundColor: "rgba(255,255,255,0.06)" }}
     >
       {CURRENCIES.map((currency) => (
@@ -19,7 +19,7 @@ export function CurrencySwitcher({ value, onChange }: CurrencySwitcherProps) {
           key={currency}
           onClick={() => onChange(currency)}
           className={cn(
-            "h-7 rounded-full px-3 text-xs font-medium transition-all duration-200",
+            "h-10 min-w-[54px] rounded-full px-2.5 text-[11px] font-medium transition-all duration-200 sm:px-3 sm:text-xs",
             value === currency
               ? currency === "USD"
                 ? "bg-accent-secondary text-white"

@@ -1,4 +1,4 @@
-import { Outlet } from "react-router-dom";
+import { NavLink, Outlet } from "react-router-dom";
 import { useAuth, useUser } from "@clerk/react";
 import { useEffect, useState, useCallback, createContext, useContext, useRef } from "react";
 import { Sidebar } from "@/src/components/layout/sidebar";
@@ -10,8 +10,9 @@ import { useExchangeRate } from "@/src/hooks/use-exchange-rate";
 import { useCryptoPrices } from "@/src/hooks/use-crypto-prices";
 import { apiFetch } from "@/src/lib/api/client";
 import type { Asset } from "@/src/types/database";
-import { Menu, MessageSquare } from "lucide-react";
+import { Brain, FileText, LayoutDashboard, Menu, MessageSquare, PieChart } from "lucide-react";
 import { CurrencySwitcher } from "@/src/components/currency/currency-switcher";
+import { cn } from "@/src/lib/utils";
 import {
   convertFromNativeToDisplay,
   currencySymbol,
@@ -37,6 +38,13 @@ interface DashboardFxRates {
   SGD: number;
   HKD: number;
 }
+
+const mobilePrimaryNav = [
+  { to: "/dashboard", label: "Home", icon: LayoutDashboard, end: true },
+  { to: "/dashboard/holdings", label: "Holdings", icon: PieChart },
+  { to: "/dashboard/data", label: "Import", icon: FileText },
+  { to: "/dashboard/advisor", label: "Advisor", icon: Brain },
+] as const;
 
 function mapAssetClassToHoldingType(assetClass: string): Holding["type"] {
   if (assetClass === "pse_stock") return "PH Stocks";
@@ -496,18 +504,21 @@ export default function DashboardLayout() {
           onRequestCloseMobile={() => setMobileSidebarOpen(false)}
         />
         <main
-          className="min-h-screen transition-all duration-300"
+          className="layout-shift-transition min-h-screen"
           style={{
             marginLeft: sidebarWidth,
-            padding: isMobileViewport ? "0 14px 18px 14px" : "0 24px 24px 24px",
+            padding: isMobileViewport
+              ? "0 12px calc(104px + env(safe-area-inset-bottom)) 12px"
+              : "0 24px 24px 24px",
           }}
         >
           {/* Top Bar */}
           <div
-            className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-3 py-3 sm:py-4"
+            className="motion-reveal sticky top-0 z-30 flex flex-wrap items-center justify-between gap-3 py-3 sm:py-4"
             style={{
               backgroundColor: "rgba(9,9,11,0.85)",
               backdropFilter: "blur(12px)",
+              paddingTop: isMobileViewport ? "calc(env(safe-area-inset-top) + 8px)" : undefined,
             }}
           >
             {/* Left: Portfolio total */}
@@ -516,7 +527,7 @@ export default function DashboardLayout() {
                 <button
                   type="button"
                   onClick={() => setMobileSidebarOpen(true)}
-                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-glass-border bg-bg-surface text-text-primary transition-colors hover:border-border-accent hover:bg-white/5"
+                  className="motion-tap inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-glass-border bg-bg-surface text-text-primary transition-colors hover:border-border-accent hover:bg-white/5"
                   aria-label="Open navigation"
                 >
                   <Menu size={16} aria-hidden="true" />
@@ -541,7 +552,7 @@ export default function DashboardLayout() {
               <button
                 type="button"
                 onClick={() => setAdvisorOpen(true)}
-                className="inline-flex h-9 items-center gap-2 rounded-full border border-glass-border bg-bg-surface px-2.5 text-xs font-medium text-text-primary transition-colors hover:border-border-accent hover:bg-white/5 sm:px-3"
+                className="motion-tap inline-flex h-11 items-center gap-2 rounded-full border border-glass-border bg-bg-surface px-2.5 text-xs font-medium text-text-primary transition-colors hover:border-border-accent hover:bg-white/5 sm:px-3"
                 aria-label="Open AI Advisor"
               >
                 <MessageSquare size={14} className="text-accent-primary" aria-hidden="true" />
@@ -551,7 +562,7 @@ export default function DashboardLayout() {
               <UserButton
                 appearance={{
                   elements: {
-                    avatarBox: "w-9 h-9",
+                    avatarBox: "w-11 h-11",
                   },
                 }}
               />
@@ -560,6 +571,33 @@ export default function DashboardLayout() {
 
           <Outlet />
         </main>
+
+        {isMobileViewport && (
+          <nav
+            className="motion-reveal motion-reveal-delay-2 fixed inset-x-0 bottom-0 z-20 border-t border-glass-border bg-bg-surface/95 backdrop-blur-xl"
+            aria-label="Primary navigation"
+            style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+          >
+            <div className="mx-auto grid h-[84px] max-w-5xl grid-cols-4 items-center px-2">
+              {mobilePrimaryNav.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.end}
+                  className={({ isActive }) =>
+                    cn(
+                      "motion-tap flex h-full flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors duration-200",
+                      isActive ? "text-accent-primary" : "text-text-muted"
+                    )
+                  }
+                >
+                  <item.icon size={20} aria-hidden="true" />
+                  <span>{item.label}</span>
+                </NavLink>
+              ))}
+            </div>
+          </nav>
+        )}
 
         <RightRail isOpen={advisorOpen} onClose={() => setAdvisorOpen(false)} />
       </div>
