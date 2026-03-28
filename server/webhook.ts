@@ -95,6 +95,20 @@ const RAG_ADMIN_USER_IDS = new Set(
     .filter((value) => value.length > 0)
 );
 
+const hasSupabaseServerEnv = Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY);
+
+function getMissingCriticalEnvNames(): string[] {
+  const missing: string[] = [];
+
+  if (!SUPABASE_URL) missing.push("VITE_SUPABASE_URL");
+  if (!SUPABASE_SERVICE_ROLE_KEY) missing.push("SUPABASE_SERVICE_ROLE_KEY");
+  if (!process.env.VITE_SUPABASE_ANON_KEY) missing.push("VITE_SUPABASE_ANON_KEY");
+  if (!process.env.VITE_CLERK_PUBLISHABLE_KEY) missing.push("VITE_CLERK_PUBLISHABLE_KEY");
+  if (!process.env.VITE_APP_URL) missing.push("VITE_APP_URL");
+
+  return missing;
+}
+
 const CRYPTO_TICKER_TO_COINGECKO_ID: Record<string, string> = {
   BTC: "bitcoin",
   ETH: "ethereum",
@@ -2403,11 +2417,13 @@ async function generateAiImportSummary(holdings: ParsedImportHolding[]): Promise
   return payload.choices?.[0]?.message?.content?.trim() || null;
 }
 
-if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+if (!hasSupabaseServerEnv) {
   console.error(
     "Missing required environment variables: VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY"
   );
-  process.exit(1);
+  if (!isVercelRuntime) {
+    process.exit(1);
+  }
 }
 
 if (!WEBHOOK_SECRET) {
@@ -2416,12 +2432,20 @@ if (!WEBHOOK_SECRET) {
   );
 }
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false,
-  },
-});
+const supabase = hasSupabaseServerEnv
+  ? createClient(SUPABASE_URL as string, SUPABASE_SERVICE_ROLE_KEY as string, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    })
+  : ({
+      from() {
+        throw new Error(
+          "SUPABASE_SERVER_ENV_MISSING: Set VITE_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in deployment environment variables."
+        );
+      },
+    } as unknown as ReturnType<typeof createClient>);
 
 // Clerk sends JSON, but we need the raw body for signature verification
 app.post(
@@ -5632,7 +5656,19 @@ app.get("/health", (_req, res) => {
 });
 
 app.get("/api/health", (_req, res) => {
-  res.status(200).send("OK");
+  const missingEnv = getMissingCriticalEnvNames();
+  if (missingEnv.length > 0) {
+    return res.status(503).json({
+      ok: false,
+      message: "Missing required environment variables.",
+      missingEnv,
+    });
+  }
+
+  return res.status(200).json({
+    ok: true,
+    message: "OK",
+  });
 });
 
 async function startServer() {
