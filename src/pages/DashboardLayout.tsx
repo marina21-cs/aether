@@ -473,7 +473,26 @@ export default function DashboardLayout() {
         }
 
         if (!cancelled) {
-          setHoldings(hydratedAssets.map(mapAssetToHolding));
+          const mappedHoldings = hydratedAssets.map(mapAssetToHolding);
+          
+          // If we got no holdings from server, try to recover from localStorage backup
+          if (mappedHoldings.length === 0) {
+            try {
+              const backupKey = `aether:holdings-backup:${userId}`;
+              const backupJson = window.localStorage.getItem(backupKey);
+              if (backupJson) {
+                const backupHoldings = JSON.parse(backupJson) as Holding[];
+                if (Array.isArray(backupHoldings) && backupHoldings.length > 0) {
+                  setHoldings(backupHoldings);
+                  return;
+                }
+              }
+            } catch {
+              // Ignore backup recovery failures
+            }
+          }
+          
+          setHoldings(mappedHoldings);
         }
       } catch {
         if (!cancelled) {
@@ -495,6 +514,18 @@ export default function DashboardLayout() {
       fallbackController.abort();
     };
   }, [user, isLoaded, getToken]);
+
+  // Auto-persist holdings to localStorage backup on every change to prevent data loss
+  useEffect(() => {
+    if (!user?.id || holdings.length === 0) return;
+    
+    try {
+      const backupKey = `aether:holdings-backup:${user.id}`;
+      window.localStorage.setItem(backupKey, JSON.stringify(holdings));
+    } catch {
+      // Ignore storage failures (private mode / blocked storage).
+    }
+  }, [holdings, user?.id]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(max-width: 1023px)");

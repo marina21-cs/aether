@@ -148,6 +148,28 @@ async function downloadPublicMockFile(fileName: string) {
   downloadTextFile(fileName, content);
 }
 
+function randomizeHoldingsData(holdings: Holding[]): Holding[] {
+  // Randomize prices/quantities for mock data so each user gets unique data
+  return holdings.map((holding) => {
+    // Add randomization only to mock data (not cash, keep consistent seed)
+    if (holding.type === "Cash") return holding;
+
+    // Random variation: -15% to +25% on prices
+    const priceVariation = 0.85 + Math.random() * 0.4;
+    const qtyVariation = 0.9 + Math.random() * 0.2;
+
+    return {
+      ...holding,
+      avgCost: holding.avgCost > 0 ? holding.avgCost * priceVariation : holding.avgCost,
+      manualPrice:
+        holding.manualPrice && holding.manualPrice > 0
+          ? holding.manualPrice * priceVariation
+          : holding.manualPrice,
+      qty: Math.max(1, Math.floor(holding.qty * qtyVariation)),
+    };
+  });
+}
+
 function toErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message.trim().length > 0) {
     return error.message;
@@ -470,6 +492,7 @@ export function ImportData() {
   const [aiImportSummary, setAiImportSummary] = useState<string | null>(null);
   const [advisorPromptHint, setAdvisorPromptHint] = useState<string | null>(null);
   const [pendingImport, setPendingImport] = useState<PendingCsvImport | null>(null);
+  const [showTutorial, setShowTutorial] = useState(true);
 
   const [tangibleMetaByKey, setTangibleMetaByKey] = useState<Record<string, TangibleMeta>>({});
   const [manualStep, setManualStep] = useState<ManualWizardStep>(1);
@@ -701,36 +724,45 @@ export function ImportData() {
           throw new Error("No valid holdings found in uploaded CSV.");
         }
 
+        // Apply randomization for mock data to give unique per-user experience
+        const isMockFile = fileName.includes("mock");
+        const finalHoldings = isMockFile ? randomizeHoldingsData(parsedHoldings) : parsedHoldings;
+
         setPendingImport({
           fileName,
           parserLabel,
           warningsCount: analysis.warnings.length,
-          holdings: parsedHoldings,
+          holdings: finalHoldings,
           tangibleMetaByKey: nextMetaMap,
           aiSummary: analysis.aiSummary || analysis.insights.join(" "),
           advisorPromptHint: analysis.advisorPromptSuggestion || null,
         });
         setStatus(
-          `Parsed ${parsedHoldings.length} holdings via ${parserLabel} parser${parsedWarnings}. Review and confirm before adding.`
+          `Parsed ${finalHoldings.length} holdings via ${parserLabel} parser${parsedWarnings}${isMockFile ? " (randomized for unique user data)" : ""}. Review and confirm before adding.`
         );
       } catch {
         parsedHoldings = fallbackParseCsv(csvText);
         if (parsedHoldings.length === 0) {
           throw new Error("No valid holdings found in uploaded CSV.");
         }
+
+        // Apply randomization for mock data to give unique per-user experience
+        const isMockFile = fileName.includes("mock");
+        const finalHoldings = isMockFile ? randomizeHoldingsData(parsedHoldings) : parsedHoldings;
+
         setAiImportSummary(null);
         setAdvisorPromptHint(null);
         setPendingImport({
           fileName,
           parserLabel: "fallback",
           warningsCount: 0,
-          holdings: parsedHoldings,
+          holdings: finalHoldings,
           tangibleMetaByKey: nextMetaMap,
           aiSummary: null,
           advisorPromptHint: null,
         });
         setStatus(
-          `Parsed ${parsedHoldings.length} holdings using local fallback parser. Review and confirm before adding.`
+          `Parsed ${finalHoldings.length} holdings using local fallback parser${isMockFile ? " (randomized for unique user data)" : ""}. Review and confirm before adding.`
         );
       }
     } catch (error) {
@@ -1083,6 +1115,36 @@ export function ImportData() {
           Upload broker or bank export files (CSV), let AI normalize them, and auto-sync to Dashboard + Holdings.
         </p>
       </div>
+
+      {showTutorial && (
+        <div className="motion-reveal motion-reveal-delay-1 rounded-xl border border-accent-secondary/40 bg-accent-secondary/10 p-4 text-sm text-text-secondary">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex-1">
+              <p className="inline-flex items-center font-semibold text-accent-secondary">
+                <Sparkles className="mr-1.5 h-4 w-4" /> Quick Import Tutorial
+              </p>
+              <p className="mt-2 text-xs leading-relaxed text-text-secondary sm:text-sm">
+                <strong>Step 1:</strong> Download a CSV export from your bank or broker (e.g., BDO, MetroBank, COL, etc.)
+                <br />
+                <strong>Step 2:</strong> Upload the CSV file using the "Upload CSV" button
+                <br />
+                <strong>Step 3:</strong> Review the parsed holdings in the confirmation dialog (the system uses AI to normalize columns)
+                <br />
+                <strong>Step 4:</strong> Confirm the import to add holdings to your Dashboard and Holdings page
+                <br />
+                <strong>Pro tip:</strong> Try our mock data first by selecting "Mock: Base Holdings" and clicking "Import Mock" to see how it works!
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowTutorial(false)}
+              className="rounded-full text-text-muted hover:text-text-primary"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="motion-reveal motion-reveal-delay-1 rounded-xl border border-accent-warning/40 bg-accent-warning/10 p-4 text-sm text-text-secondary">
         <p className="inline-flex items-center font-semibold text-accent-warning">

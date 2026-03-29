@@ -27,7 +27,7 @@ import { formatCurrency } from "@/src/lib/utils";
 import {
   ContextualLiteracyPanel,
   GlossaryTerm,
-} from "@/feature/phase_1_contextual_literacy";
+} from "@/creation/feature/phase_1_contextual_literacy";
 
 const SEVERITY_COLOR: Record<"critical" | "warning" | "info", string> = {
   critical: "#F87171",
@@ -104,7 +104,7 @@ export function FeeScanner() {
   }, [realReturnData]);
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 animate-in fade-in duration-500">
+    <div className="relative mx-auto max-w-7xl space-y-6 animate-in fade-in duration-500 overflow-visible">
       <header className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
         <div>
           <h1 className="font-display text-3xl font-bold text-white">Fee Analyzer & Real Return</h1>
