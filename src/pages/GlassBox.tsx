@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { useUser } from "@clerk/react";
 import {
   Activity,
@@ -46,6 +46,66 @@ const DEFAULT_CONTROLS: Required<GlassBoxQuery> = {
   marketShockPct: 0,
   riskFreeRatePct: 6.25,
 };
+
+type ControlDraftKey =
+  | "years"
+  | "monthlyContributionPhp"
+  | "returnShiftPct"
+  | "volatilityMultiplier"
+  | "baseCorrelation"
+  | "riskFreeRatePct"
+  | "paths"
+  | "marketShockPct";
+
+type ControlDrafts = Record<ControlDraftKey, string>;
+
+function toControlDrafts(
+  value: Pick<Required<GlassBoxQuery>, ControlDraftKey>
+): ControlDrafts {
+  return {
+    years: String(value.years),
+    monthlyContributionPhp: String(value.monthlyContributionPhp),
+    returnShiftPct: String(value.returnShiftPct),
+    volatilityMultiplier: String(value.volatilityMultiplier),
+    baseCorrelation: String(value.baseCorrelation),
+    riskFreeRatePct: String(value.riskFreeRatePct),
+    paths: String(value.paths),
+    marketShockPct: String(value.marketShockPct),
+  };
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function parseDraftNumber(value: string): number | null {
+  if (value.trim().length === 0) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizeControlValue(key: ControlDraftKey, raw: number): number {
+  switch (key) {
+    case "years":
+      return clamp(Math.round(raw), 1, 30);
+    case "monthlyContributionPhp":
+      return clamp(Math.round(raw), 0, 1_000_000);
+    case "returnShiftPct":
+      return round(clamp(raw, -20, 20), 2);
+    case "volatilityMultiplier":
+      return round(clamp(raw, 0.5, 3), 2);
+    case "baseCorrelation":
+      return round(clamp(raw, 0, 0.95), 2);
+    case "riskFreeRatePct":
+      return round(clamp(raw, 0, 25), 2);
+    case "paths":
+      return clamp(Math.round(raw), 100, 5_000);
+    case "marketShockPct":
+      return round(clamp(raw, -80, 80), 1);
+    default:
+      return raw;
+  }
+}
 
 type ExperienceMode = "guided" | "advanced";
 type RiskStyleId = "defensive" | "balanced" | "growth";
@@ -146,6 +206,9 @@ export function GlassBox() {
   const [riskStyleId, setRiskStyleId] = useState<RiskStyleId>(DEFAULT_RISK_STYLE);
   const [activePresetId, setActivePresetId] = useState<string>("base-case");
   const [controls, setControls] = useState<Required<GlassBoxQuery>>(DEFAULT_CONTROLS);
+  const [controlDrafts, setControlDrafts] = useState<ControlDrafts>(() =>
+    toControlDrafts(DEFAULT_CONTROLS)
+  );
   const [appliedControls, setAppliedControls] = useState<Required<GlassBoxQuery>>(DEFAULT_CONTROLS);
 
   useEffect(() => {
@@ -218,6 +281,7 @@ export function GlassBox() {
 
   const resetScenario = () => {
     setControls(DEFAULT_CONTROLS);
+    setControlDrafts(toControlDrafts(DEFAULT_CONTROLS));
     setAppliedControls(DEFAULT_CONTROLS);
     setExperienceMode("guided");
     setRiskStyleId(DEFAULT_RISK_STYLE);
@@ -228,30 +292,32 @@ export function GlassBox() {
     const style = RISK_STYLES.find((row) => row.id === styleId);
     if (!style) return;
     setRiskStyleId(styleId);
-    setActivePresetId("");
-    setControls((prev) => ({
-      ...prev,
+    const nextControls = {
+      ...controls,
       returnShiftPct: style.returnShiftPct,
       volatilityMultiplier: style.volatilityMultiplier,
       baseCorrelation: style.baseCorrelation,
-    }));
+    };
+    setControls(nextControls);
+    setControlDrafts(toControlDrafts(nextControls));
   };
 
   const applyPreset = (presetId: string) => {
     const preset = GLASS_PRESETS.find((row) => row.id === presetId);
     if (!preset) return;
 
-    setExperienceMode("guided");
     setActivePresetId(preset.id);
-    setControls((prev) => ({
-      ...prev,
+    const nextControls = {
+      ...controls,
       years: preset.values.years,
       monthlyContributionPhp: preset.values.monthlyContributionPhp,
       returnShiftPct: preset.values.returnShiftPct,
       volatilityMultiplier: preset.values.volatilityMultiplier,
       marketShockPct: preset.values.marketShockPct,
       baseCorrelation: preset.values.baseCorrelation,
-    }));
+    };
+    setControls(nextControls);
+    setControlDrafts(toControlDrafts(nextControls));
 
     if (preset.values.volatilityMultiplier <= 0.9) {
       setRiskStyleId("defensive");
@@ -288,6 +354,49 @@ export function GlassBox() {
       rangeWidth: Math.max(optimistic - conservative, 0),
     };
   }, [data]);
+
+  const handleControlDraftChange =
+    (key: ControlDraftKey) => (event: ChangeEvent<HTMLInputElement>) => {
+      const raw = event.target.value;
+      setControlDrafts((prev) => ({
+        ...prev,
+        [key]: raw,
+      }));
+
+      const parsed = parseDraftNumber(raw);
+      if (parsed === null) {
+        return;
+      }
+
+      const normalized = normalizeControlValue(key, parsed);
+      setControls((prev) => ({
+        ...prev,
+        [key]: normalized,
+      }));
+    };
+
+  const commitControlDraft = (key: ControlDraftKey) => {
+    const parsed = parseDraftNumber(controlDrafts[key]);
+
+    if (parsed === null) {
+      setControlDrafts((prev) => ({
+        ...prev,
+        [key]: String(controls[key]),
+      }));
+      return;
+    }
+
+    const normalized = normalizeControlValue(key, parsed);
+
+    setControls((prev) => ({
+      ...prev,
+      [key]: normalized,
+    }));
+    setControlDrafts((prev) => ({
+      ...prev,
+      [key]: String(normalized),
+    }));
+  };
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 animate-in fade-in duration-500">
@@ -403,8 +512,9 @@ export function GlassBox() {
                 min={1}
                 max={30}
                 step={1}
-                value={controls.years}
-                onChange={(event) => setControls((prev) => ({ ...prev, years: Math.round(Number(event.target.value) || 1) }))}
+                value={controlDrafts.years}
+                onChange={handleControlDraftChange("years")}
+                onBlur={() => commitControlDraft("years")}
                 className="mt-1 w-full rounded-md border border-glass-border bg-bg-dark px-2 py-1.5 text-sm text-text-primary"
               />
             </label>
@@ -416,8 +526,9 @@ export function GlassBox() {
                 min={0}
                 max={1000000}
                 step={1000}
-                value={controls.monthlyContributionPhp}
-                onChange={(event) => setControls((prev) => ({ ...prev, monthlyContributionPhp: Math.round(Number(event.target.value) || 0) }))}
+                value={controlDrafts.monthlyContributionPhp}
+                onChange={handleControlDraftChange("monthlyContributionPhp")}
+                onBlur={() => commitControlDraft("monthlyContributionPhp")}
                 className="mt-1 w-full rounded-md border border-glass-border bg-bg-dark px-2 py-1.5 text-sm text-text-primary"
               />
             </label>
@@ -459,8 +570,9 @@ export function GlassBox() {
                   min={-20}
                   max={20}
                   step={0.25}
-                  value={controls.returnShiftPct}
-                  onChange={(event) => setControls((prev) => ({ ...prev, returnShiftPct: round(Number(event.target.value), 2) }))}
+                  value={controlDrafts.returnShiftPct}
+                  onChange={handleControlDraftChange("returnShiftPct")}
+                  onBlur={() => commitControlDraft("returnShiftPct")}
                   className="mt-1 w-full rounded-md border border-glass-border bg-bg-dark px-2 py-1.5 text-sm text-text-primary"
                 />
               </label>
@@ -472,8 +584,9 @@ export function GlassBox() {
                   min={0.5}
                   max={3}
                   step={0.05}
-                  value={controls.volatilityMultiplier}
-                  onChange={(event) => setControls((prev) => ({ ...prev, volatilityMultiplier: round(Number(event.target.value), 2) }))}
+                  value={controlDrafts.volatilityMultiplier}
+                  onChange={handleControlDraftChange("volatilityMultiplier")}
+                  onBlur={() => commitControlDraft("volatilityMultiplier")}
                   className="mt-1 w-full rounded-md border border-glass-border bg-bg-dark px-2 py-1.5 text-sm text-text-primary"
                 />
               </label>
@@ -485,8 +598,9 @@ export function GlassBox() {
                   min={0}
                   max={0.95}
                   step={0.01}
-                  value={controls.baseCorrelation}
-                  onChange={(event) => setControls((prev) => ({ ...prev, baseCorrelation: round(Number(event.target.value), 2) }))}
+                  value={controlDrafts.baseCorrelation}
+                  onChange={handleControlDraftChange("baseCorrelation")}
+                  onBlur={() => commitControlDraft("baseCorrelation")}
                   className="mt-1 w-full rounded-md border border-glass-border bg-bg-dark px-2 py-1.5 text-sm text-text-primary"
                 />
               </label>
@@ -498,8 +612,9 @@ export function GlassBox() {
                   min={0}
                   max={25}
                   step={0.05}
-                  value={controls.riskFreeRatePct}
-                  onChange={(event) => setControls((prev) => ({ ...prev, riskFreeRatePct: round(Number(event.target.value), 2) }))}
+                  value={controlDrafts.riskFreeRatePct}
+                  onChange={handleControlDraftChange("riskFreeRatePct")}
+                  onBlur={() => commitControlDraft("riskFreeRatePct")}
                   className="mt-1 w-full rounded-md border border-glass-border bg-bg-dark px-2 py-1.5 text-sm text-text-primary"
                 />
               </label>
@@ -511,8 +626,9 @@ export function GlassBox() {
                   min={100}
                   max={5000}
                   step={100}
-                  value={controls.paths}
-                  onChange={(event) => setControls((prev) => ({ ...prev, paths: Math.round(Number(event.target.value) || 100) }))}
+                  value={controlDrafts.paths}
+                  onChange={handleControlDraftChange("paths")}
+                  onBlur={() => commitControlDraft("paths")}
                   className="mt-1 w-full rounded-md border border-glass-border bg-bg-dark px-2 py-1.5 text-sm text-text-primary"
                 />
               </label>
@@ -524,8 +640,9 @@ export function GlassBox() {
                   min={-80}
                   max={80}
                   step={0.5}
-                  value={controls.marketShockPct}
-                  onChange={(event) => setControls((prev) => ({ ...prev, marketShockPct: round(Number(event.target.value), 1) }))}
+                  value={controlDrafts.marketShockPct}
+                  onChange={handleControlDraftChange("marketShockPct")}
+                  onBlur={() => commitControlDraft("marketShockPct")}
                   className="mt-1 w-full rounded-md border border-glass-border bg-bg-dark px-2 py-1.5 text-sm text-text-primary"
                 />
               </label>

@@ -19,8 +19,13 @@ export function GlossaryTerm({
   side = "bottom",
 }: GlossaryTermProps) {
   const [open, setOpen] = useState(false);
+  const [resolvedSide, setResolvedSide] = useState<"top" | "bottom">(side);
   const containerRef = useRef<HTMLSpanElement | null>(null);
   const entry = getGlossaryEntry(term);
+
+  useEffect(() => {
+    setResolvedSide(side);
+  }, [side]);
 
   useEffect(() => {
     if (!open) return;
@@ -47,6 +52,27 @@ export function GlossaryTerm({
     };
   }, [open]);
 
+  useEffect(() => {
+    if (!open || !containerRef.current) return;
+
+    const rect = containerRef.current.getBoundingClientRect();
+    const minSpace = 200;
+    const spaceAbove = rect.top;
+    const spaceBelow = window.innerHeight - rect.bottom;
+
+    if (side === "bottom" && spaceBelow < minSpace && spaceAbove > spaceBelow) {
+      setResolvedSide("top");
+      return;
+    }
+
+    if (side === "top" && spaceAbove < minSpace && spaceBelow > spaceAbove) {
+      setResolvedSide("bottom");
+      return;
+    }
+
+    setResolvedSide(side);
+  }, [open, side]);
+
   const text = label ?? term;
 
   if (!entry) {
@@ -56,7 +82,7 @@ export function GlossaryTerm({
   const hasChipStyle = Boolean(className);
 
   return (
-    <span ref={containerRef} className="relative inline-flex">
+    <span ref={containerRef} className={cn("relative inline-flex", open && "z-[1000]")}>
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
@@ -80,7 +106,7 @@ export function GlossaryTerm({
           aria-label={`${entry.term} definition`}
           className={cn(
             "absolute z-[999] w-[280px] max-w-[calc(100vw-1rem)] rounded-[12px] border border-glass-border bg-bg-elevated p-3 shadow-[0_14px_32px_rgba(0,0,0,0.45)]",
-            side === "top" ? "bottom-[calc(100%+8px)]" : "top-[calc(100%+8px)]",
+            resolvedSide === "top" ? "bottom-[calc(100%+8px)]" : "top-[calc(100%+8px)]",
             align === "right" ? "right-0" : "left-0"
           )}
         >

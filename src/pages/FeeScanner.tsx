@@ -147,7 +147,7 @@ export function FeeScanner() {
             {loading || !feeData ? "..." : formatCurrency(feeData.totalTenYearCost)}
           </p>
           <p className="mt-1 text-[11px] text-text-muted">
-            Estimated <GlossaryTerm term="fee drag" /> over 10 years.
+            Estimated <GlossaryTerm term="fee drag" side="top" /> over 10 years.
           </p>
         </article>
 
@@ -157,7 +157,7 @@ export function FeeScanner() {
             {loading ? "..." : `${weightedAnnualFeePct.toFixed(2)}%`}
           </p>
           <p className="mt-1 text-[11px] text-text-muted">
-            Blended <GlossaryTerm term="annual fee" /> by current asset value.
+            Blended <GlossaryTerm term="annual fee" side="top" /> by current asset value.
           </p>
         </article>
 
@@ -167,7 +167,7 @@ export function FeeScanner() {
             {loading ? "..." : negativeRealCount}
           </p>
           <p className="mt-1 text-[11px] text-text-muted">
-            Holdings where <GlossaryTerm term="real return" /> is below zero.
+            Holdings where <GlossaryTerm term="real return" side="top" /> is below zero.
           </p>
         </article>
       </section>

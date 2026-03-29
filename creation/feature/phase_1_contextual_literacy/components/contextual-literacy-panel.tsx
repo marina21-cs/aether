@@ -60,7 +60,7 @@ export function ContextualLiteracyPanel({
   return (
     <section
       className={cn(
-        "relative overflow-visible glass-panel rounded-[16px] border border-accent-primary/25 p-4",
+        "relative z-20 overflow-visible glass-panel rounded-[16px] border border-accent-primary/25 p-4",
         className
       )}
     >
