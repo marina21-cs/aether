@@ -7,7 +7,7 @@ import { TRACKED_CRYPTO_TICKERS } from "@/src/lib/market-universe";
 import {
   ContextualLiteracyPanel,
   GlossaryTerm,
-} from "@/creation/feature/phase_1_contextual_literacy/index";
+} from "@/creation/feature/phase_1_contextual_literacy/index.ts";
 import { ActionableInsightsPanel } from "@/creation/feature/phase_3_actionable_insights";
 
 const TYPE_COLORS: Record<Holding["type"], string> = {

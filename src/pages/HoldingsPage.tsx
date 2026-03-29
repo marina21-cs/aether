@@ -7,7 +7,7 @@ import { AddAssetDialog } from "@/src/components/holdings/add-asset-dialog";
 import {
   ContextualLiteracyPanel,
   GlossaryTerm,
-} from "@/creation/feature/phase_1_contextual_literacy/index";
+} from "@/creation/feature/phase_1_contextual_literacy/index.ts";
 
 export default function HoldingsPage() {
   const { holdings, getMarketValue, formatDisplay, cryptoPrices } = useDashboard();

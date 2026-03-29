@@ -27,7 +27,7 @@ import { formatCurrency } from "@/src/lib/utils";
 import {
   ContextualLiteracyPanel,
   GlossaryTerm,
-} from "@/creation/feature/phase_1_contextual_literacy/index";
+} from "@/creation/feature/phase_1_contextual_literacy/index.ts";
 
 const SEVERITY_COLOR: Record<"critical" | "warning" | "info", string> = {
   critical: "#F87171",
